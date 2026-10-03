@@ -1,0 +1,120 @@
+/* Gantt Chart SVG styling & Interactive Tooltips */
+
+.gantt-chart-paper svg {
+  display: block;
+  user-select: none;
+}
+
+/* Tooltip floating card */
+.gantt-tooltip {
+  position: absolute;
+  display: none;
+  background: rgba(15, 23, 42, 0.94);
+  color: #f8fafc;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+  z-index: 1000;
+  max-width: 300px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  animation: tooltipIn 0.12s ease-out;
+}
+
+@keyframes tooltipIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.gantt-tooltip .tt-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.gantt-tooltip .tt-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.gantt-tooltip .tt-type {
+  font-size: 10px;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.gantt-tooltip .tt-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #ffffff;
+  margin-bottom: 6px;
+}
+
+.gantt-tooltip .tt-meta {
+  font-size: 11.5px;
+  color: #cbd5e1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.gantt-tooltip .tt-meta strong {
+  color: #e2e8f0;
+}
+
+.gantt-tooltip .tt-notes {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  font-style: italic;
+  color: #94a3b8;
+  font-size: 10.5px;
+}
+
+.gantt-tooltip .tt-hint {
+  margin-top: 6px;
+  font-size: 9.5px;
+  color: #38bdf8;
+  border-top: 1px dashed rgba(255, 255, 255, 0.15);
+  padding-top: 4px;
+}
+
+/* SVG Interactive Hover Effects */
+.gantt-task-bar {
+  transition: opacity 0.15s ease;
+}
+
+.gantt-task-bar:hover .bar-main {
+  filter: brightness(1.1);
+}
+
+.gantt-milestone-marker:hover polygon {
+  transform: scale(1.15);
+  transform-origin: center;
+  transition: transform 0.15s ease;
+}
+
+.gantt-deliverable-marker:hover polygon {
+  transform: scale(1.15);
+  transform-origin: center;
+  transition: transform 0.15s ease;
+}
+
+.gantt-item-row:hover rect {
+  opacity: 0.98;
+}
+
+/* Resize handle hover cue */
+.resize-handle {
+  cursor: ew-resize;
+}
+.resize-handle:hover {
+  fill: rgba(255, 255, 255, 0.35) !important;
+}

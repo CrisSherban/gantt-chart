@@ -1,0 +1,719 @@
+/**
+ * SVG Gantt Chart Renderer with interactive drag/resize, tooltips, collapsible WPs, and themes
+ */
+
+export class GanttChart {
+  constructor(container, options = {}) {
+    this.container = container;
+    this.data = null;
+    this.onTaskChange = options.onTaskChange || (() => {});
+    this.onTaskSelect = options.onTaskSelect || (() => {});
+    this.tooltipEl = null;
+    this.hasMoved = false;
+    this.initTooltip();
+  }
+
+  initTooltip() {
+    let el = document.getElementById('gantt-tooltip');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'gantt-tooltip';
+      el.className = 'gantt-tooltip';
+      document.body.appendChild(el);
+    }
+    this.tooltipEl = el;
+  }
+
+  render(data) {
+    this.data = data;
+    const { meta, workPackages, items } = data;
+
+    const leftColWidth = meta.compactView ? 240 : 320;
+    const monthWidth = meta.monthWidth || 44;
+    const totalMonths = Math.max(1, meta.totalMonths || 36);
+    const rowHeight = meta.rowHeight || 38;
+    const headerHeight = 70;
+    const titleBannerHeight = (meta.title || meta.subtitle) ? 68 : 10;
+    const chartTimelineWidth = totalMonths * monthWidth;
+    const totalWidth = leftColWidth + chartTimelineWidth + 24;
+
+    // Calculate visible rows and aggregate spans
+    const visibleRows = [];
+    const wpMap = new Map(workPackages.map(wp => [wp.id, wp]));
+
+    workPackages.forEach(wp => {
+      // Work Package Header Row
+      const wpItems = items.filter(it => it.wpId === wp.id);
+      let minM = Infinity, maxM = -Infinity;
+      wpItems.forEach(it => {
+        if (it.startMonth < minM) minM = it.startMonth;
+        if (it.endMonth > maxM) maxM = it.endMonth;
+      });
+      if (minM === Infinity) { minM = 1; maxM = 1; }
+
+      visibleRows.push({
+        isWp: true,
+        wp,
+        itemCount: wpItems.length,
+        minMonth: minM,
+        maxMonth: maxM
+      });
+
+      if (!wp.collapsed) {
+        wpItems.forEach(item => {
+          visibleRows.push({
+            isWp: false,
+            wp,
+            item
+          });
+        });
+      }
+    });
+
+    const totalRowsHeight = visibleRows.length * rowHeight;
+    const legendHeight = 44;
+    const totalHeight = titleBannerHeight + headerHeight + totalRowsHeight + legendHeight + 20;
+
+    // Theme palette
+    const themeStyles = this.getThemeStyles(meta.theme);
+
+    // Build SVG
+    const svgParts = [];
+    svgParts.push(`
+      <svg id="gantt-svg-root"
+           xmlns="http://www.w3.org/2000/svg"
+           viewBox="0 0 ${totalWidth} ${totalHeight}"
+           width="${totalWidth}"
+           height="${totalHeight}"
+           style="background-color: ${themeStyles.bg}; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;"
+           data-theme="${meta.theme}">
+        <defs>
+          <linearGradient id="bar-shine" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#ffffff" stop-opacity="0.22"/>
+            <stop offset="100%" stop-color="#000000" stop-opacity="0.12"/>
+          </linearGradient>
+          <filter id="subtle-shadow" x="-5%" y="-10%" width="110%" height="130%">
+            <feDropShadow dx="0" dy="1.5" stdDeviation="1.5" flood-opacity="0.12"/>
+          </filter>
+          <pattern id="hatch-pattern" width="8" height="8" patternTransform="rotate(45 0 0)" patternUnits="userSpaceOnUse">
+            <line x1="0" y1="0" x2="0" y2="8" stroke="#ffffff" stroke-width="2" stroke-opacity="0.32"/>
+          </pattern>
+        </defs>
+    `);
+
+    // Title banner
+    if (meta.title || meta.subtitle) {
+      svgParts.push(`
+        <g class="gantt-title-banner" transform="translate(16, 16)">
+          ${meta.title ? `<text x="4" y="24" font-size="20" font-weight="700" fill="${themeStyles.titleText}">${this.escapeXML(meta.title)}</text>` : ''}
+          ${meta.subtitle ? `<text x="4" y="44" font-size="12" font-weight="500" fill="${themeStyles.subtitleText}">${this.escapeXML(meta.subtitle)}</text>` : ''}
+          <text x="${totalWidth - 36}" y="24" text-anchor="end" font-size="11" fill="${themeStyles.metaText}">Duration: ${totalMonths} Months | ${items.length} Project Items</text>
+        </g>
+      `);
+    }
+
+    const chartOffsetY = titleBannerHeight;
+
+    // Timeline Header & Columns background
+    svgParts.push(`<g transform="translate(0, ${chartOffsetY})">`);
+
+    // Top Header background
+    svgParts.push(`
+      <rect x="0" y="0" width="${totalWidth}" height="${headerHeight}" fill="${themeStyles.headerBg}" stroke="${themeStyles.gridBorder}" stroke-width="1"/>
+      <rect x="0" y="0" width="${leftColWidth}" height="${headerHeight}" fill="${themeStyles.headerLeftBg}" stroke="${themeStyles.gridBorder}" stroke-width="1"/>
+      <text x="16" y="42" font-size="13" font-weight="700" fill="${themeStyles.titleText}">Work Package / Tasks & Milestones</text>
+    `);
+
+    // Header Timeline Months & Years
+    const headerCols = this.generateTimeHeaders(meta, totalMonths, monthWidth, leftColWidth, themeStyles);
+    svgParts.push(headerCols);
+
+    // Chart Rows Background & Grid lines
+    svgParts.push(`<g transform="translate(0, ${headerHeight})">`);
+
+    // Vertical Month Grid Lines behind rows
+    for (let m = 0; m <= totalMonths; m++) {
+      const gx = leftColWidth + m * monthWidth;
+      const isYearBoundary = (m > 0 && m % 12 === 0);
+      const isQuarterBoundary = (m > 0 && m % 3 === 0);
+      const strokeCol = isYearBoundary ? themeStyles.yearGridBorder : (isQuarterBoundary ? themeStyles.quarterGridBorder : themeStyles.gridLine);
+      const strokeW = isYearBoundary ? 1.5 : (isQuarterBoundary ? 1 : 0.75);
+
+      svgParts.push(`
+        <line x1="${gx}" y1="0" x2="${gx}" y2="${totalRowsHeight}" stroke="${strokeCol}" stroke-width="${strokeW}" ${(!isYearBoundary && !isQuarterBoundary) ? 'stroke-dasharray="2,3"' : ''}/>
+      `);
+    }
+
+    // Rows
+    visibleRows.forEach((row, idx) => {
+      const y = idx * rowHeight;
+      const isEven = idx % 2 === 0;
+
+      if (row.isWp) {
+        // Work package header row (collapsible)
+        const wpX = leftColWidth + (row.minMonth - 1) * monthWidth;
+        const wpW = Math.max(monthWidth * 0.5, (row.maxMonth - row.minMonth + 1) * monthWidth);
+        const chevron = row.wp.collapsed
+          ? `<polygon points="12,${y + rowHeight/2 - 4} 18,${y + rowHeight/2} 12,${y + rowHeight/2 + 4}" fill="${row.wp.color}"/>`
+          : `<polygon points="10,${y + rowHeight/2 - 2} 18,${y + rowHeight/2 - 2} 14,${y + rowHeight/2 + 3}" fill="${row.wp.color}"/>`;
+
+        svgParts.push(`
+          <g class="gantt-wp-row" data-wpid="${row.wp.id}" style="cursor: pointer;">
+            <rect x="0" y="${y}" width="${totalWidth}" height="${rowHeight}" fill="${themeStyles.wpRowBg}" stroke="${themeStyles.gridBorder}" stroke-width="0.5"/>
+            <rect x="0" y="${y}" width="5" height="${rowHeight}" fill="${row.wp.color}"/>
+            
+            <!-- Chevron expand/collapse toggle -->
+            ${chevron}
+
+            <!-- WP Left label -->
+            <text x="26" y="${y + rowHeight / 2 + 4.5}" font-size="12.5" font-weight="700" fill="${themeStyles.titleText}">
+              <tspan fill="${row.wp.color}" font-weight="800">${this.escapeXML(row.wp.code)}:</tspan> ${this.escapeXML(row.wp.name)}
+            </text>
+            <text x="${leftColWidth - 14}" y="${y + rowHeight / 2 + 4.5}" text-anchor="end" font-size="10" fill="${themeStyles.metaText}">
+              ${row.itemCount} items ${row.wp.collapsed ? '(click to expand)' : ''}
+            </text>
+
+            <!-- WP Span Bar in timeline (bracket or aggregate bar) -->
+            <rect x="${wpX}" y="${y + (rowHeight - 12) / 2}" width="${wpW}" height="12" rx="3" fill="${row.wp.color}" fill-opacity="0.28" stroke="${row.wp.color}" stroke-width="1.2"/>
+            <polygon points="${wpX},${y + (rowHeight - 12) / 2 + 12} ${wpX + 7},${y + (rowHeight - 12) / 2 + 12} ${wpX},${y + (rowHeight - 12) / 2 + 5}" fill="${row.wp.color}"/>
+            <polygon points="${wpX + wpW},${y + (rowHeight - 12) / 2 + 12} ${wpX + wpW - 7},${y + (rowHeight - 12) / 2 + 12} ${wpX + wpW},${y + (rowHeight - 12) / 2 + 5}" fill="${row.wp.color}"/>
+          </g>
+        `);
+      } else {
+        // Task / Milestone / Deliverable Row
+        const item = row.item;
+        const isMilestone = item.type === 'milestone';
+        const isDeliverable = item.type === 'deliverable';
+
+        svgParts.push(`
+          <g class="gantt-item-row" data-id="${item.id}" data-wpid="${row.wp.id}">
+            <!-- Row background -->
+            <rect x="0" y="${y}" width="${totalWidth}" height="${rowHeight}" fill="${isEven ? themeStyles.rowBgEven : themeStyles.rowBgOdd}" stroke="${themeStyles.gridBorder}" stroke-width="0.5"/>
+            
+            <!-- Left Column Content -->
+            <!-- Type badge / code -->
+            <rect x="18" y="${y + (rowHeight - 18) / 2}" width="${isMilestone ? 28 : (isDeliverable ? 32 : 36)}" height="18" rx="3" fill="${isMilestone ? '#fef3c7' : (isDeliverable ? '#ede9fe' : themeStyles.codeBadgeBg)}" stroke="${isMilestone ? '#f59e0b' : (isDeliverable ? '#8b5cf6' : themeStyles.codeBadgeBorder)}" stroke-width="0.75"/>
+            <text x="${18 + (isMilestone ? 14 : (isDeliverable ? 16 : 18))}" y="${y + rowHeight / 2 + 4}" text-anchor="middle" font-size="9.5" font-weight="700" fill="${isMilestone ? '#b45309' : (isDeliverable ? '#6d28d9' : row.wp.color)}">
+              ${this.escapeXML(item.code || (isMilestone ? 'MS' : (isDeliverable ? 'DEL' : 'TSK')))}
+            </text>
+
+            <!-- Title & Lead -->
+            <text x="60" y="${y + rowHeight / 2 + 4}" font-size="11.5" font-weight="500" fill="${themeStyles.bodyText}" class="item-title-text">
+              ${this.escapeXML(this.truncate(item.title, meta.compactView ? 24 : 32))}
+              ${item.lead ? `<tspan fill="${themeStyles.metaText}" font-size="10"> (${this.escapeXML(item.lead)})</tspan>` : ''}
+            </text>
+
+            <!-- Duration badge on right of left column -->
+            <text x="${leftColWidth - 12}" y="${y + rowHeight / 2 + 4}" text-anchor="end" font-size="9.5" font-family="monospace" fill="${themeStyles.metaText}">
+              M${item.startMonth}${item.endMonth !== item.startMonth ? `–M${item.endMonth}` : ''}
+            </text>
+        `);
+
+        // Timeline Bar / Diamond / Deliverable rendering
+        if (isMilestone) {
+          // Milestone Diamond
+          const cx = leftColWidth + (item.startMonth - 0.5) * monthWidth;
+          const cy = y + rowHeight / 2;
+          const r = 9;
+
+          svgParts.push(`
+            <g class="gantt-milestone-marker interactive-node" data-id="${item.id}" transform="translate(${cx}, ${cy})" style="cursor: pointer;">
+              <polygon points="0,${-r} ${r},0 0,${r} ${-r},0" fill="#f59e0b" stroke="#b45309" stroke-width="1.8" filter="url(#subtle-shadow)"/>
+              <circle cx="0" cy="0" r="2.5" fill="#ffffff"/>
+            </g>
+          `);
+        } else if (isDeliverable) {
+          // Deliverable Hexagon
+          const cx = leftColWidth + (item.startMonth - 0.5) * monthWidth;
+          const cy = y + rowHeight / 2;
+          const r = 8.5;
+
+          svgParts.push(`
+            <g class="gantt-deliverable-marker interactive-node" data-id="${item.id}" transform="translate(${cx}, ${cy})" style="cursor: pointer;">
+              <polygon points="${-r},${-r * 0.58} 0,${-r * 1.15} ${r},${-r * 0.58} ${r},${r * 0.58} 0,${r * 1.15} ${-r},${r * 0.58}" fill="#8b5cf6" stroke="#6d28d9" stroke-width="1.5" filter="url(#subtle-shadow)"/>
+              <text x="0" y="3" text-anchor="middle" font-size="8" font-weight="800" fill="#ffffff">D</text>
+            </g>
+          `);
+        } else {
+          // Standard Task Bar
+          const startM = item.startMonth;
+          const endM = Math.max(startM, item.endMonth);
+          const barX = leftColWidth + (startM - 1) * monthWidth + 3;
+          const barW = Math.max(12, (endM - startM + 1) * monthWidth - 6);
+          const barH = rowHeight - 14;
+          const barY = y + 7;
+          const progress = Math.min(100, Math.max(0, item.progress || 0));
+          const progressW = (barW * progress) / 100;
+          const barColor = row.wp.color || '#3b82f6';
+
+          svgParts.push(`
+            <g class="gantt-task-bar interactive-node" data-id="${item.id}" style="cursor: grab;">
+              <!-- Outer bar -->
+              <rect class="bar-main" x="${barX}" y="${barY}" width="${barW}" height="${barH}" rx="5" fill="${barColor}" stroke="${themeStyles.barBorder}" stroke-width="0.8" filter="url(#subtle-shadow)"/>
+              
+              <!-- Progress fill if progress > 0 -->
+              ${meta.showProgress && progress > 0 ? `
+                <clipPath id="clip-${item.id}">
+                  <rect x="${barX}" y="${barY}" width="${progressW}" height="${barH}" rx="5"/>
+                </clipPath>
+                <rect x="${barX}" y="${barY}" width="${barW}" height="${barH}" rx="5" fill="#000000" fill-opacity="0.22" clip-path="url(#clip-${item.id})"/>
+                <rect x="${barX}" y="${barY}" width="${progressW}" height="${barH}" rx="5" fill="url(#hatch-pattern)" clip-path="url(#clip-${item.id})"/>
+              ` : ''}
+
+              <!-- Bar shine overlay -->
+              <rect x="${barX}" y="${barY}" width="${barW}" height="${barH}" rx="5" fill="url(#bar-shine)" pointer-events="none"/>
+
+              <!-- Bar Label -->
+              ${barW >= 60 ? `
+                <text x="${barX + 8}" y="${barY + barH / 2 + 3.8}" font-size="10.5" font-weight="600" fill="#ffffff" pointer-events="none">
+                  ${this.escapeXML(this.truncate(item.code || item.title, Math.floor(barW / 7.5)))}
+                  ${meta.showProgress && progress > 0 && barW > 110 ? `<tspan fill="#e0f2fe" font-size="9.5"> (${progress}%)</tspan>` : ''}
+                </text>
+              ` : `
+                <text x="${barX + barW + 6}" y="${barY + barH / 2 + 3.8}" font-size="10" font-weight="600" fill="${themeStyles.bodyText}" pointer-events="none">
+                  ${this.escapeXML(item.code || item.title)}
+                </text>
+              `}
+
+              <!-- Drag handle on the right edge for resizing duration -->
+              <rect class="resize-handle resize-right" x="${barX + barW - 7}" y="${barY}" width="9" height="${barH}" rx="2" fill="transparent" style="cursor: ew-resize;"/>
+            </g>
+          `);
+        }
+
+        svgParts.push(`</g>`);
+      }
+    });
+
+    svgParts.push(`</g>`); // End rows group
+
+    // Bottom Legend
+    const legendY = headerHeight + totalRowsHeight + 14;
+    svgParts.push(`
+      <g class="gantt-legend" transform="translate(16, ${legendY})">
+        <rect x="0" y="0" width="${totalWidth - 32}" height="32" rx="6" fill="${themeStyles.legendBg}" stroke="${themeStyles.gridBorder}" stroke-width="0.8"/>
+        
+        <g transform="translate(12, 10)">
+          <!-- Task legend -->
+          <rect x="0" y="0" width="16" height="10" rx="2" fill="#2563eb"/>
+          <text x="22" y="9" font-size="11" font-weight="500" fill="${themeStyles.bodyText}">Research Task</text>
+
+          <!-- Milestone legend -->
+          <polygon points="120,5 125,0 130,5 125,10" fill="#f59e0b" stroke="#b45309" stroke-width="1"/>
+          <text x="136" y="9" font-size="11" font-weight="500" fill="${themeStyles.bodyText}">Milestone (Decision Point)</text>
+
+          <!-- Deliverable legend -->
+          <polygon points="296,2 301,0 306,2 306,7 301,9 296,7" fill="#8b5cf6"/>
+          <text x="312" y="9" font-size="11" font-weight="500" fill="${themeStyles.bodyText}">Deliverable / Output</text>
+
+          ${meta.showProgress ? `
+            <!-- Progress legend -->
+            <rect x="445" y="0" width="24" height="10" rx="2" fill="#2563eb"/>
+            <rect x="445" y="0" width="14" height="10" rx="2" fill="#1e3a8a"/>
+            <text x="475" y="9" font-size="11" font-weight="500" fill="${themeStyles.bodyText}">Progress Fill (%)</text>
+          ` : ''}
+        </g>
+      </g>
+    `);
+
+    svgParts.push(`</g>`); // End chartOffsetY
+    svgParts.push(`</svg>`);
+
+    this.container.innerHTML = svgParts.join('');
+
+    // Attach event listeners for hover tooltips, collapsible WPs, and interactive dragging
+    this.attachEventListeners(leftColWidth, monthWidth, totalMonths);
+  }
+
+  generateTimeHeaders(meta, totalMonths, monthWidth, leftColWidth, themeStyles) {
+    const parts = [];
+    const timeMode = meta.timeMode || 'project_months';
+    const startDate = meta.startDate ? new Date(meta.startDate) : new Date(2026, 0, 1);
+
+    const y1Height = 32;
+    const y2Height = 38;
+
+    // Grouping by year (every 12 months)
+    const numYears = Math.ceil(totalMonths / 12);
+    for (let yr = 0; yr < numYears; yr++) {
+      const startM = yr * 12 + 1;
+      const endM = Math.min((yr + 1) * 12, totalMonths);
+      const spanMonths = endM - startM + 1;
+      const x = leftColWidth + (startM - 1) * monthWidth;
+      const w = spanMonths * monthWidth;
+
+      let yearLabel = `Year ${yr + 1}`;
+      if (timeMode === 'calendar') {
+        const calYear = startDate.getFullYear() + yr;
+        yearLabel = `${calYear}`;
+      } else if (timeMode === 'quarters') {
+        yearLabel = `Year ${yr + 1} (Q${yr * 4 + 1}–Q${Math.min((yr + 1) * 4, Math.ceil(totalMonths / 3))})`;
+      } else {
+        yearLabel = `Project Year ${yr + 1} (Months ${startM}–${endM})`;
+      }
+
+      parts.push(`
+        <rect x="${x}" y="0" width="${w}" height="${y1Height}" fill="${yr % 2 === 0 ? themeStyles.yearHeaderBgEven : themeStyles.yearHeaderBgOdd}" stroke="${themeStyles.gridBorder}" stroke-width="0.8"/>
+        <text x="${x + w / 2}" y="20" text-anchor="middle" font-size="11.5" font-weight="700" fill="${themeStyles.titleText}">
+          ${yearLabel}
+        </text>
+      `);
+    }
+
+    // Subheader: Individual months
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    for (let m = 1; m <= totalMonths; m++) {
+      const x = leftColWidth + (m - 1) * monthWidth;
+      let mLabel = `M${m}`;
+
+      if (timeMode === 'calendar') {
+        const d = new Date(startDate.getFullYear(), startDate.getMonth() + (m - 1), 1);
+        mLabel = monthNames[d.getMonth()];
+      } else if (timeMode === 'quarters') {
+        const qNum = Math.ceil(m / 3);
+        const mInQ = ((m - 1) % 3) + 1;
+        mLabel = `Q${qNum}.${mInQ}`;
+      }
+
+      const isQuarterEnd = m % 3 === 0;
+
+      parts.push(`
+        <rect x="${x}" y="${y1Height}" width="${monthWidth}" height="${y2Height}" fill="${themeStyles.monthHeaderBg}" stroke="${themeStyles.gridBorder}" stroke-width="0.6"/>
+        <text x="${x + monthWidth / 2}" y="${y1Height + 23}" text-anchor="middle" font-size="10.5" font-weight="${isQuarterEnd ? '700' : '500'}" fill="${isQuarterEnd ? themeStyles.titleText : themeStyles.subtitleText}">
+          ${mLabel}
+        </text>
+      `);
+    }
+
+    return parts.join('');
+  }
+
+  attachEventListeners(leftColWidth, monthWidth, totalMonths) {
+    const svg = this.container.querySelector('#gantt-svg-root');
+    if (!svg) return;
+
+    // Collapsible Work Package header rows
+    svg.querySelectorAll('.gantt-wp-row').forEach(wpRow => {
+      wpRow.addEventListener('click', (e) => {
+        const wpId = wpRow.getAttribute('data-wpid');
+        const wp = this.data.workPackages.find(w => w.id === wpId);
+        if (wp) {
+          wp.collapsed = !wp.collapsed;
+          this.render(this.data);
+          this.onTaskChange();
+        }
+      });
+    });
+
+    // Tooltip listeners
+    const nodes = svg.querySelectorAll('.interactive-node');
+    nodes.forEach(node => {
+      const id = node.getAttribute('data-id');
+      const item = this.data.items.find(it => it.id === id);
+      if (!item) return;
+      const wp = this.data.workPackages.find(w => w.id === item.wpId);
+
+      node.addEventListener('mouseenter', (e) => {
+        this.showTooltip(e, item, wp);
+      });
+
+      node.addEventListener('mousemove', (e) => {
+        this.moveTooltip(e);
+      });
+
+      node.addEventListener('mouseleave', () => {
+        this.hideTooltip();
+      });
+
+      node.addEventListener('click', (e) => {
+        if (this.hasMoved) return; // ignore click if dragging occurred
+        e.stopPropagation();
+        this.onTaskSelect(item.id);
+      });
+    });
+
+    // Drag-to-move and Drag-to-resize handlers
+    let isDragging = false;
+    let dragType = null; // 'move' | 'resize-right'
+    let currentItemId = null;
+    let initialMouseX = 0;
+    let origStartMonth = 1;
+    let origEndMonth = 1;
+
+    const onMouseDown = (e) => {
+      const resizeHandle = e.target.closest('.resize-right');
+      const taskBar = e.target.closest('.gantt-task-bar');
+      const marker = e.target.closest('.gantt-milestone-marker, .gantt-deliverable-marker');
+
+      if (resizeHandle) {
+        e.preventDefault();
+        e.stopPropagation();
+        const parentBar = resizeHandle.closest('.gantt-task-bar');
+        currentItemId = parentBar.getAttribute('data-id');
+        const item = this.data.items.find(i => i.id === currentItemId);
+        if (!item) return;
+
+        isDragging = true;
+        this.hasMoved = false;
+        dragType = 'resize-right';
+        initialMouseX = e.clientX;
+        origStartMonth = item.startMonth;
+        origEndMonth = item.endMonth;
+      } else if (taskBar || marker) {
+        const targetNode = taskBar || marker;
+        currentItemId = targetNode.getAttribute('data-id');
+        const item = this.data.items.find(i => i.id === currentItemId);
+        if (!item) return;
+
+        isDragging = true;
+        this.hasMoved = false;
+        dragType = 'move';
+        initialMouseX = e.clientX;
+        origStartMonth = item.startMonth;
+        origEndMonth = item.endMonth;
+      }
+    };
+
+    const onMouseMove = (e) => {
+      if (!isDragging || !currentItemId) return;
+
+      const deltaX = e.clientX - initialMouseX;
+      if (Math.abs(deltaX) > 4) {
+        this.hasMoved = true;
+      }
+
+      const deltaMonths = Math.round(deltaX / monthWidth);
+      const item = this.data.items.find(i => i.id === currentItemId);
+      if (!item) return;
+
+      if (dragType === 'resize-right') {
+        const newEnd = Math.max(origStartMonth, Math.min(totalMonths, origEndMonth + deltaMonths));
+        if (newEnd !== item.endMonth) {
+          item.endMonth = newEnd;
+          this.render(this.data);
+          this.onTaskChange(item);
+        }
+      } else if (dragType === 'move') {
+        const span = origEndMonth - origStartMonth;
+        let newStart = origStartMonth + deltaMonths;
+        let newEnd = newStart + span;
+
+        if (newStart < 1) {
+          newStart = 1;
+          newEnd = newStart + span;
+        }
+        if (newEnd > totalMonths) {
+          newEnd = totalMonths;
+          newStart = Math.max(1, newEnd - span);
+        }
+
+        if (newStart !== item.startMonth || newEnd !== item.endMonth) {
+          item.startMonth = newStart;
+          item.endMonth = newEnd;
+          this.render(this.data);
+          this.onTaskChange(item);
+        }
+      }
+    };
+
+    const onMouseUp = () => {
+      if (isDragging) {
+        isDragging = false;
+        dragType = null;
+        currentItemId = null;
+        setTimeout(() => { this.hasMoved = false; }, 80);
+      }
+    };
+
+    svg.addEventListener('mousedown', onMouseDown);
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  }
+
+  showTooltip(e, item, wp) {
+    if (!this.tooltipEl) return;
+    const typeLabel = item.type === 'milestone' ? 'Milestone' : (item.type === 'deliverable' ? 'Deliverable' : 'Task');
+    const badgeColor = item.type === 'milestone' ? '#f59e0b' : (item.type === 'deliverable' ? '#8b5cf6' : (wp ? wp.color : '#2563eb'));
+
+    this.tooltipEl.innerHTML = `
+      <div class="tt-header">
+        <span class="tt-badge" style="background-color: ${badgeColor}; color: #fff;">${this.escapeXML(item.code || typeLabel)}</span>
+        <span class="tt-type">${typeLabel}</span>
+      </div>
+      <div class="tt-title">${this.escapeXML(item.title)}</div>
+      <div class="tt-meta">
+        <div><strong>Package:</strong> ${wp ? this.escapeXML(wp.code + ' – ' + wp.name) : 'General'}</div>
+        <div><strong>Timeline:</strong> Month ${item.startMonth}${item.endMonth !== item.startMonth ? ` – Month ${item.endMonth}` : ''} (${item.endMonth - item.startMonth + 1} mo)</div>
+        ${item.type === 'task' ? `<div><strong>Progress:</strong> ${item.progress ?? 0}% completed</div>` : ''}
+        ${item.lead ? `<div><strong>Lead / Owner:</strong> ${this.escapeXML(item.lead)}</div>` : ''}
+        ${item.notes ? `<div class="tt-notes">${this.escapeXML(item.notes)}</div>` : ''}
+      </div>
+      <div class="tt-hint">Click to edit details • Drag bar to adjust dates</div>
+    `;
+
+    this.tooltipEl.style.display = 'block';
+    this.moveTooltip(e);
+  }
+
+  moveTooltip(e) {
+    if (!this.tooltipEl) return;
+    const offset = 14;
+    let x = e.pageX + offset;
+    let y = e.pageY + offset;
+
+    const ttRect = this.tooltipEl.getBoundingClientRect();
+    if (x + ttRect.width > window.innerWidth - 10) {
+      x = e.pageX - ttRect.width - offset;
+    }
+    if (y + ttRect.height > window.innerHeight - 10) {
+      y = e.pageY - ttRect.height - offset;
+    }
+
+    this.tooltipEl.style.left = `${x}px`;
+    this.tooltipEl.style.top = `${y}px`;
+  }
+
+  hideTooltip() {
+    if (this.tooltipEl) {
+      this.tooltipEl.style.display = 'none';
+    }
+  }
+
+  getThemeStyles(theme) {
+    const themes = {
+      academic: {
+        bg: '#ffffff',
+        headerBg: '#f8fafc',
+        headerLeftBg: '#f1f5f9',
+        yearHeaderBgEven: '#e2e8f0',
+        yearHeaderBgOdd: '#edf2f7',
+        monthHeaderBg: '#f8fafc',
+        wpRowBg: '#f1f5f9',
+        rowBgEven: '#ffffff',
+        rowBgOdd: '#fbfcfd',
+        gridBorder: '#e2e8f0',
+        yearGridBorder: '#94a3b8',
+        quarterGridBorder: '#cbd5e1',
+        gridLine: '#f1f5f9',
+        titleText: '#0f172a',
+        subtitleText: '#475569',
+        bodyText: '#1e293b',
+        metaText: '#64748b',
+        codeBadgeBg: '#f1f5f9',
+        codeBadgeBorder: '#cbd5e1',
+        barBorder: '#ffffff',
+        legendBg: '#f8fafc'
+      },
+      ocean: {
+        bg: '#ffffff',
+        headerBg: '#f0f9ff',
+        headerLeftBg: '#e0f2fe',
+        yearHeaderBgEven: '#bae6fd',
+        yearHeaderBgOdd: '#cffafe',
+        monthHeaderBg: '#f0f9ff',
+        wpRowBg: '#e0f2fe',
+        rowBgEven: '#ffffff',
+        rowBgOdd: '#f8fafc',
+        gridBorder: '#e0f2fe',
+        yearGridBorder: '#7dd3fc',
+        quarterGridBorder: '#bae6fd',
+        gridLine: '#f0f9ff',
+        titleText: '#082f49',
+        subtitleText: '#0369a1',
+        bodyText: '#0c4a6e',
+        metaText: '#0284c7',
+        codeBadgeBg: '#e0f2fe',
+        codeBadgeBorder: '#bae6fd',
+        barBorder: '#ffffff',
+        legendBg: '#f0f9ff'
+      },
+      emerald: {
+        bg: '#ffffff',
+        headerBg: '#f0fdf4',
+        headerLeftBg: '#dcfce7',
+        yearHeaderBgEven: '#bbf7d0',
+        yearHeaderBgOdd: '#d1fae5',
+        monthHeaderBg: '#f0fdf4',
+        wpRowBg: '#dcfce7',
+        rowBgEven: '#ffffff',
+        rowBgOdd: '#f9fdfa',
+        gridBorder: '#dcfce7',
+        yearGridBorder: '#86efac',
+        quarterGridBorder: '#bbf7d0',
+        gridLine: '#f0fdf4',
+        titleText: '#052e16',
+        subtitleText: '#15803d',
+        bodyText: '#166534',
+        metaText: '#16a34a',
+        codeBadgeBg: '#dcfce7',
+        codeBadgeBorder: '#bbf7d0',
+        barBorder: '#ffffff',
+        legendBg: '#f0fdf4'
+      },
+      monochrome: {
+        bg: '#ffffff',
+        headerBg: '#f4f4f5',
+        headerLeftBg: '#e4e4e7',
+        yearHeaderBgEven: '#d4d4d8',
+        yearHeaderBgOdd: '#e4e4e7',
+        monthHeaderBg: '#f4f4f5',
+        wpRowBg: '#e4e4e7',
+        rowBgEven: '#ffffff',
+        rowBgOdd: '#fafafa',
+        gridBorder: '#d4d4d8',
+        yearGridBorder: '#71717a',
+        quarterGridBorder: '#a1a1aa',
+        gridLine: '#e4e4e7',
+        titleText: '#18181b',
+        subtitleText: '#3f3f46',
+        bodyText: '#27272a',
+        metaText: '#52525b',
+        codeBadgeBg: '#f4f4f5',
+        codeBadgeBorder: '#d4d4d8',
+        barBorder: '#18181b',
+        legendBg: '#f4f4f5'
+      },
+      dark: {
+        bg: '#0f172a',
+        headerBg: '#1e293b',
+        headerLeftBg: '#1e293b',
+        yearHeaderBgEven: '#334155',
+        yearHeaderBgOdd: '#293548',
+        monthHeaderBg: '#1e293b',
+        wpRowBg: '#1e293b',
+        rowBgEven: '#0f172a',
+        rowBgOdd: '#141e33',
+        gridBorder: '#334155',
+        yearGridBorder: '#64748b',
+        quarterGridBorder: '#475569',
+        gridLine: '#1e293b',
+        titleText: '#f8fafc',
+        subtitleText: '#94a3b8',
+        bodyText: '#f1f5f9',
+        metaText: '#94a3b8',
+        codeBadgeBg: '#334155',
+        codeBadgeBorder: '#475569',
+        barBorder: '#0f172a',
+        legendBg: '#1e293b'
+      }
+    };
+
+    return themes[theme] || themes.academic;
+  }
+
+  escapeXML(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+  }
+
+  truncate(str, maxLen) {
+    if (!str) return '';
+    if (str.length <= maxLen) return str;
+    return str.substring(0, maxLen - 1) + '…';
+  }
+}

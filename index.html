@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Research Gantt — Project & Research Timeline Generator</title>
+  <meta name="description" content="Modern, publication-grade web app for creating Gantt charts for research proposals, academic grants, and project roadmaps. Export to vector SVG, PDF, and high-res PNG.">
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/gantt.css">
+
+  <!-- jsPDF and svg2pdf for direct client-side PDF export -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/svg2pdf.js/2.2.4/svg2pdf.umd.min.js"></script>
+</head>
+<body>
+
+  <!-- Top Navigation Bar -->
+  <header class="app-header">
+    <div class="brand-section">
+      <div class="brand-icon">
+        <img src="assets/favicon.svg" alt="Logo" width="28" height="28">
+      </div>
+      <div class="brand-text">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <h1>ResearchGantt</h1>
+          <span class="brand-badge">Research & Grants</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Center / Template Selector -->
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <span style="font-size: 12px; font-weight: 600; color: var(--text-muted);">Template:</span>
+      <select id="preset-select" class="form-control" style="width: 220px; padding: 5px 8px; font-size: 12.5px;">
+        <option value="horizon_europe">EU Horizon / NSF Project (36M)</option>
+        <option value="phd_plan">PhD Dissertation Plan (48M)</option>
+        <option value="rnd_product">Translational R&D (18M)</option>
+        <option value="blank">Blank Project</option>
+      </select>
+    </div>
+
+    <!-- Actions & Exports -->
+    <div class="nav-actions">
+      <!-- Theme selector -->
+      <select id="theme-select" class="form-control" style="width: 140px; padding: 5px 8px; font-size: 12.5px;" title="Color Theme">
+        <option value="academic">Academic Clean</option>
+        <option value="ocean">Ocean Blue</option>
+        <option value="emerald">Emerald Sage</option>
+        <option value="monochrome">Monochrome Print</option>
+        <option value="dark">Dark Studio</option>
+      </select>
+
+      <!-- Zoom Controls -->
+      <div style="display: flex; border: 1px solid var(--border-strong); border-radius: var(--radius-md); overflow: hidden;">
+        <button id="btn-zoom-out" class="btn btn-icon" style="border:none; border-radius:0;" title="Zoom Out Timeline">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
+        </button>
+        <button id="btn-zoom-in" class="btn btn-icon" style="border:none; border-radius:0; border-left: 1px solid var(--border);" title="Zoom In Timeline">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
+        </button>
+      </div>
+
+      <!-- Export Dropdown -->
+      <div class="dropdown-wrap">
+        <button class="btn btn-primary dropdown-toggle">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+          Export Chart
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        </button>
+        <div class="dropdown-menu">
+          <button class="dropdown-item" id="btn-export-svg">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+            <div>
+              <strong>Vector SVG (.svg)</strong>
+              <div style="font-size: 11px; color: var(--text-subtle);">Infinite resolution, LaTeX & Illustrator ready</div>
+            </div>
+          </button>
+          <button class="dropdown-item" id="btn-export-pdf">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+            <div>
+              <strong>PDF Document (.pdf)</strong>
+              <div style="font-size: 11px; color: var(--text-subtle);">Grant proposals, print & submission</div>
+            </div>
+          </button>
+          <button class="dropdown-item" id="btn-export-png">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+            <div>
+              <strong>High-Res PNG (.png)</strong>
+              <div style="font-size: 11px; color: var(--text-subtle);">Slides, PowerPoint & Word documents</div>
+            </div>
+          </button>
+          <div class="dropdown-divider"></div>
+          <button class="dropdown-item" id="btn-print">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+            Print / System PDF
+          </button>
+        </div>
+      </div>
+
+      <!-- Data / Save Dropdown -->
+      <div class="dropdown-wrap">
+        <button class="btn dropdown-toggle">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+          Data
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        </button>
+        <div class="dropdown-menu">
+          <button class="dropdown-item" id="btn-export-json">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            Save Project (JSON)
+          </button>
+          <button class="dropdown-item" id="btn-import-json">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+            Open Project (JSON)
+          </button>
+          <div class="dropdown-divider"></div>
+          <button class="dropdown-item" id="btn-export-csv">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+            Export Tasks to CSV
+          </button>
+          <button class="dropdown-item" id="btn-import-csv">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"></path><path d="M12 12v9"></path><path d="m16 16-4-4-4 4"></path></svg>
+            Import Tasks from CSV
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hidden inputs for file loading -->
+  <input type="file" id="json-file-input" accept=".json" style="display: none;">
+  <input type="file" id="csv-file-input" accept=".csv" style="display: none;">
+
+  <!-- Main App Layout -->
+  <div class="app-container">
+
+    <!-- Left Sidebar: Project & Tasks Editor -->
+    <aside class="app-sidebar" id="app-sidebar">
+      <div class="sidebar-tabs">
+        <div class="sidebar-tab active" data-tab="tab-tasks">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+          Tasks
+        </div>
+        <div class="sidebar-tab" data-tab="tab-wp">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+          Packages
+        </div>
+        <div class="sidebar-tab" data-tab="tab-settings">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+          Settings
+        </div>
+      </div>
+
+      <div class="sidebar-content">
+
+        <!-- Tab 1: Tasks & Milestones -->
+        <div class="tab-pane active" id="tab-tasks">
+          <div class="pane-header">
+            <span class="pane-title">Tasks & Milestones</span>
+            <div style="display: flex; gap: 4px;">
+              <button class="btn btn-sm btn-primary" id="btn-add-task">+ Task</button>
+              <button class="btn btn-sm" id="btn-add-milestone" title="Add Milestone (Diamond)">+ Milestone</button>
+              <button class="btn btn-sm" id="btn-add-deliverable" title="Add Deliverable (Hexagon)">+ Deliv</button>
+            </div>
+          </div>
+
+          <div class="task-filter-bar">
+            <input type="text" id="task-search" class="search-input" placeholder="Search tasks, codes...">
+            <select id="task-wp-filter" class="form-control" style="width: 130px; font-size: 11.5px; padding: 6px;">
+              <option value="all">All Packages</option>
+            </select>
+          </div>
+
+          <div id="task-items-list" class="task-items-list">
+            <!-- Dynamic task items cards -->
+          </div>
+        </div>
+
+        <!-- Tab 2: Work Packages -->
+        <div class="tab-pane" id="tab-wp">
+          <div class="pane-header">
+            <span class="pane-title">Work Packages (WPs)</span>
+            <button class="btn btn-sm btn-primary" id="btn-add-wp">+ Add WP</button>
+          </div>
+          <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
+            Work Packages group your tasks and define row colors across the Gantt chart.
+          </p>
+          <div id="wp-list-container">
+            <!-- Dynamic WP cards -->
+          </div>
+        </div>
+
+        <!-- Tab 3: Settings & Timeline -->
+        <div class="tab-pane" id="tab-settings">
+          <div class="pane-header">
+            <span class="pane-title">Project & Timeline</span>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="input-project-title">Project Title</label>
+            <input type="text" id="input-project-title" class="form-control" placeholder="e.g. Horizon Europe AI Research">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="input-project-subtitle">Subtitle / Grant Agreement #</label>
+            <input type="text" id="input-project-subtitle" class="form-control" placeholder="e.g. Grant Agreement #10109988">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="select-time-mode">Timeline Display Mode</label>
+            <select id="select-time-mode" class="form-control">
+              <option value="project_months">Project Months (M1 – M36) [Proposal Standard]</option>
+              <option value="calendar">Calendar Months (Jan 2026 – Dec 2028)</option>
+              <option value="quarters">Quarters & Years (Q1 Y1 – Q4 Y3)</option>
+            </select>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="input-start-date">Start Date</label>
+              <input type="date" id="input-start-date" class="form-control" value="2026-01-01">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="input-total-months">Total Months</label>
+              <input type="number" id="input-total-months" class="form-control" min="1" max="120" value="36">
+            </div>
+          </div>
+
+          <div class="toggle-group">
+            <span class="toggle-label">Show Completion Progress Fill</span>
+            <label class="switch">
+              <input type="checkbox" id="toggle-show-progress" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+        </div>
+
+      </div>
+    </aside>
+
+    <!-- Main Viewport: Secondary Toolbar & Gantt Chart Container -->
+    <main class="main-viewport">
+      <!-- Toolbar with stats & sidebar toggle -->
+      <div class="chart-toolbar">
+        <div class="toolbar-left">
+          <button id="sidebar-toggle-btn" class="btn btn-sm" title="Toggle Sidebar">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
+            Toggle Editor
+          </button>
+          <div id="toolbar-stats" class="stats-badges">
+            <!-- Dynamic stats populated by app.js -->
+          </div>
+        </div>
+
+        <div class="toolbar-right">
+          <span style="font-size: 11px; color: var(--text-subtle);">Tip: Drag bars to move dates • Drag right edge to resize</span>
+        </div>
+      </div>
+
+      <!-- Gantt Chart Paper Area -->
+      <div class="gantt-scroll-container">
+        <div class="gantt-chart-paper" id="gantt-chart-container">
+          <!-- Rendered SVG will be inserted here -->
+        </div>
+      </div>
+    </main>
+
+  </div>
+
+  <!-- Modal: Add / Edit Item (Task, Milestone, Deliverable) -->
+  <div class="modal-overlay" id="item-modal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <span class="modal-title" id="item-modal-title">Edit Item Details</span>
+        <button class="modal-close" id="modal-close-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+
+        <!-- Type Selector -->
+        <label class="form-label">Item Type</label>
+        <div class="pill-selector" id="modal-type-selector">
+          <div class="pill-option active" data-type="task">Research Task</div>
+          <div class="pill-option" data-type="milestone">Milestone (Decision)</div>
+          <div class="pill-option" data-type="deliverable">Deliverable (Report/Code)</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="modal-wp-select">Work Package</label>
+          <select id="modal-wp-select" class="form-control">
+            <!-- Populated dynamically -->
+          </select>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group" style="flex: 0 0 110px;">
+            <label class="form-label" for="modal-item-code">Code / ID</label>
+            <input type="text" id="modal-item-code" class="form-control" placeholder="e.g. T1.1 / MS1">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="modal-item-title">Title / Name</label>
+            <input type="text" id="modal-item-title" class="form-control" placeholder="Descriptive task title...">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" id="modal-start-label" for="modal-start-month">Start Month</label>
+            <input type="number" id="modal-start-month" class="form-control" min="1" max="120" value="1">
+          </div>
+          <div class="form-group" id="modal-end-month-row">
+            <label class="form-label" for="modal-end-month">End Month</label>
+            <input type="number" id="modal-end-month" class="form-control" min="1" max="120" value="6">
+          </div>
+        </div>
+
+        <div class="form-group" id="modal-progress-row">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+            <label class="form-label" style="margin: 0;">Completion Progress</label>
+            <span style="font-size: 12px; font-weight: 700; color: var(--primary);">
+              <input type="number" id="modal-progress-num" min="0" max="100" value="0" style="width: 50px; text-align: right; padding: 2px 4px; border: 1px solid var(--border); border-radius: 4px;"> %
+            </span>
+          </div>
+          <input type="range" id="modal-progress" min="0" max="100" value="0" style="width: 100%; accent-color: var(--primary);">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="modal-lead">Responsible Lead / Partner</label>
+          <input type="text" id="modal-lead" class="form-control" placeholder="e.g. Uni A / Dr. Smith / Partner 2">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="modal-notes">Description & Notes (Optional)</label>
+          <textarea id="modal-notes" class="form-control" rows="2" placeholder="Key objectives, dependencies or notes..."></textarea>
+        </div>
+
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-danger" id="modal-delete-btn" style="margin-right: auto; display: none;">Delete</button>
+        <button class="btn" id="modal-cancel-btn">Cancel</button>
+        <button class="btn btn-primary" id="modal-save-btn">Save Changes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Work Package Editor -->
+  <div class="modal-overlay" id="wp-modal">
+    <div class="modal-card" style="max-width: 420px;">
+      <div class="modal-header">
+        <span class="modal-title" id="wp-modal-title">Edit Work Package</span>
+        <button class="modal-close" id="wp-modal-close-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-row">
+          <div class="form-group" style="flex: 0 0 110px;">
+            <label class="form-label" for="wp-input-code">Code</label>
+            <input type="text" id="wp-input-code" class="form-control" placeholder="WP1">
+          </div>
+          <div class="form-group" style="flex: 0 0 70px;">
+            <label class="form-label" for="wp-input-color">Color</label>
+            <input type="color" id="wp-input-color" class="form-control" style="padding: 2px 4px; height: 36px; cursor: pointer;">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="wp-input-name">Work Package Name</label>
+          <input type="text" id="wp-input-name" class="form-control" placeholder="e.g. Foundations & Benchmarking">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-danger" id="wp-modal-delete-btn" style="margin-right: auto; display: none;">Delete</button>
+        <button class="btn" id="wp-modal-cancel-btn">Cancel</button>
+        <button class="btn btn-primary" id="wp-modal-save-btn">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- App Bootstrap JS -->
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
