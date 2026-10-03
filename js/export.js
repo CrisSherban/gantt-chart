@@ -1,5 +1,5 @@
 /**
- * Export module: SVG (vector), PDF (vector & high-res), and PNG
+ * Robust Export Module for SVG (vector), PDF (high-resolution landscape), and PNG
  */
 import { triggerDownload } from './storage.js';
 
@@ -9,12 +9,11 @@ export function exportSVG(svgElement, filename = 'research-gantt-chart.svg') {
     return;
   }
 
-  // Clone SVG so we can clean it up for standalone export
   const clone = svgElement.cloneNode(true);
   clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
   clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
 
-  // Embed default font styles to guarantee standalone rendering
+  // Embed default font styles
   const styleEl = document.createElement('style');
   styleEl.textContent = `
     text {
@@ -22,12 +21,13 @@ export function exportSVG(svgElement, filename = 'research-gantt-chart.svg') {
     }
     .gantt-tooltip { display: none !important; }
     .resize-handle { display: none !important; }
+    .edit-pencil-icon { display: none !important; }
   `;
   const defs = clone.querySelector('defs') || clone.insertBefore(document.createElementNS('http://www.w3.org/2000/svg', 'defs'), clone.firstChild);
   defs.appendChild(styleEl);
 
-  // Remove interactive-only elements
-  clone.querySelectorAll('.resize-handle').forEach(el => el.remove());
+  // Remove interactive UI controls
+  clone.querySelectorAll('.resize-handle, .edit-pencil-icon').forEach(el => el.remove());
 
   const serializer = new XMLSerializer();
   let svgString = serializer.serializeToString(clone);
@@ -46,96 +46,85 @@ export function exportSVG(svgElement, filename = 'research-gantt-chart.svg') {
 
 export async function exportPDF(svgElement, filename = 'research-gantt-chart.pdf') {
   if (!svgElement) {
-    alert('No Gantt chart element found to export.');
+    alert('No Gantt chart found to export.');
     return;
   }
 
-  const viewBox = svgElement.viewBox.baseVal;
-  const width = viewBox ? viewBox.width : svgElement.clientWidth || 1200;
-  const height = viewBox ? viewBox.height : svgElement.clientHeight || 800;
-
-  // Clone SVG and temporarily attach to body (hidden) for accurate SVG bounding boxes
-  const clone = svgElement.cloneNode(true);
-  clone.querySelectorAll('.resize-handle').forEach(el => el.remove());
-  clone.style.position = 'fixed';
-  clone.style.top = '-99999px';
-  clone.style.left = '-99999px';
-  clone.style.opacity = '0';
-  clone.style.pointerEvents = 'none';
-  document.body.appendChild(clone);
-
-  const hasJsPdf = typeof window.jspdf !== 'undefined';
+  const btn = document.getElementById('btn-export-pdf');
+  const origBtnText = btn ? btn.innerHTML : '';
+  if (btn) btn.innerHTML = `<span>⏳ Generating PDF...</span>`;
 
   try {
-    // 1. Try vector PDF via svg2pdf if available
-    if (hasJsPdf && typeof window.svg2pdf === 'function') {
-      try {
-        const { jsPDF } = window.jspdf;
-        const orientation = width > height ? 'landscape' : 'portrait';
-        const pdf = new jsPDF({
-          orientation,
-          unit: 'pt',
-          format: [width, height]
-        });
+    const viewBox = svgElement.viewBox.baseVal;
+    const width = Math.round(viewBox ? viewBox.width : (svgElement.clientWidth || 1200));
+    const height = Math.round(viewBox ? viewBox.height : (svgElement.clientHeight || 800));
 
-        await window.svg2pdf(clone, pdf, {
-          x: 0,
-          y: 0,
-          width: width,
-          height: height
-        });
+    // Clone and prepare SVG
+    const clone = svgElement.cloneNode(true);
+    clone.querySelectorAll('.resize-handle, .edit-pencil-icon').forEach(el => el.remove());
+    
+    // Explicit SVG dimensions
+    clone.setAttribute('width', width);
+    clone.setAttribute('height', height);
 
-        document.body.removeChild(clone);
-        pdf.save(filename.endsWith('.pdf') ? filename : `${filename}.pdf`);
-        return;
-      } catch (vectorErr) {
-        console.warn('Vector svg2pdf encountered an issue, falling back to high-res canvas PDF:', vectorErr);
-      }
-    }
+    const bgColor = svgElement.getAttribute('style')?.match(/background-color:\s*([^;]+)/)?.[1] || '#ffffff';
 
-    // 2. High-DPI Canvas fallback to jsPDF (300 DPI publication quality)
-    if (hasJsPdf) {
-      const bgColor = svgElement.getAttribute('style')?.match(/background-color:\s*([^;]+)/)?.[1] || '#ffffff';
-      const canvas = await renderSvgToCanvas(clone, width, height, 2.5, bgColor);
+    // Render at 2.5x for crisp 300 DPI print quality
+    const canvas = await renderSvgToCanvas(clone, width, height, 2.5, bgColor);
+
+    // Verify jsPDF is loaded
+    if (typeof window.jspdf !== 'undefined') {
       const { jsPDF } = window.jspdf;
-      const orientation = width > height ? 'landscape' : 'portrait';
+      const isLandscape = width >= height;
+
+      // In jsPDF, when orientation is landscape, format width should be larger than height
+      const pageW = Math.max(width, height);
+      const pageH = Math.min(width, height);
+
       const pdf = new jsPDF({
-        orientation,
+        orientation: isLandscape ? 'landscape' : 'portrait',
         unit: 'pt',
-        format: [width, height]
+        format: isLandscape ? [pageW, pageH] : [pageH, pageW]
       });
 
-      const imgData = canvas.toDataURL('image/png');
-      pdf.addImage(imgData, 'PNG', 0, 0, width, height);
-      document.body.removeChild(clone);
+      const actualW = pdf.internal.pageSize.getWidth();
+      const actualH = pdf.internal.pageSize.getHeight();
+
+      const imgData = canvas.toDataURL('image/png', 1.0);
+      pdf.addImage(imgData, 'PNG', 0, 0, actualW, actualH, undefined, 'FAST');
       pdf.save(filename.endsWith('.pdf') ? filename : `${filename}.pdf`);
-      return;
+    } else {
+      // Fallback if jsPDF CDN was blocked
+      window.print();
     }
   } catch (err) {
-    console.error('PDF export failed:', err);
-    if (clone.parentNode) document.body.removeChild(clone);
+    console.error('PDF export error:', err);
+    alert('Could not generate PDF directly. Opening print dialog to Save as PDF...');
+    window.print();
+  } finally {
+    if (btn) btn.innerHTML = origBtnText;
   }
-
-  if (clone.parentNode) document.body.removeChild(clone);
-
-  // 3. Last fallback: browser print-to-pdf
-  alert('Exporting via browser Print dialog. Please select "Save as PDF" and choose Landscape orientation.');
-  window.print();
 }
 
 export async function exportPNG(svgElement, filename = 'research-gantt-chart.png', scale = 2.5) {
   if (!svgElement) return;
 
-  const viewBox = svgElement.viewBox.baseVal;
-  const width = viewBox ? viewBox.width : svgElement.clientWidth || 1200;
-  const height = viewBox ? viewBox.height : svgElement.clientHeight || 800;
-
-  const clone = svgElement.cloneNode(true);
-  clone.querySelectorAll('.resize-handle').forEach(el => el.remove());
-
-  const bgColor = svgElement.getAttribute('style')?.match(/background-color:\s*([^;]+)/)?.[1] || '#ffffff';
+  const btn = document.getElementById('btn-export-png');
+  const origBtnText = btn ? btn.innerHTML : '';
+  if (btn) btn.innerHTML = `<span>⏳ Generating PNG...</span>`;
 
   try {
+    const viewBox = svgElement.viewBox.baseVal;
+    const width = Math.round(viewBox ? viewBox.width : (svgElement.clientWidth || 1200));
+    const height = Math.round(viewBox ? viewBox.height : (svgElement.clientHeight || 800));
+
+    const clone = svgElement.cloneNode(true);
+    clone.querySelectorAll('.resize-handle, .edit-pencil-icon').forEach(el => el.remove());
+    clone.setAttribute('width', width);
+    clone.setAttribute('height', height);
+
+    const bgColor = svgElement.getAttribute('style')?.match(/background-color:\s*([^;]+)/)?.[1] || '#ffffff';
+
     const canvas = await renderSvgToCanvas(clone, width, height, scale, bgColor);
     canvas.toBlob((blob) => {
       if (blob) {
@@ -145,13 +134,24 @@ export async function exportPNG(svgElement, filename = 'research-gantt-chart.png
   } catch (e) {
     console.error('PNG export failed:', e);
     alert('Failed to generate PNG image.');
+  } finally {
+    if (btn) btn.innerHTML = origBtnText;
   }
 }
 
 function renderSvgToCanvas(svgElement, width, height, scale = 2, bgColor = '#ffffff') {
   return new Promise((resolve, reject) => {
+    // Clone so we can sanitize for sandboxed SVG image rendering
+    const cleanSvg = svgElement.cloneNode(true);
+
+    // Remove any external font @import rules that trigger browser security cross-origin blocking in Image()
+    cleanSvg.querySelectorAll('style').forEach(style => {
+      style.textContent = style.textContent.replace(/@import[^;]+;/g, '');
+    });
+
     const serializer = new XMLSerializer();
-    let svgString = serializer.serializeToString(svgElement);
+    let svgString = serializer.serializeToString(cleanSvg);
+
     if (!svgString.match(/^<svg[^>]+xmlns="http:\/\/www\.w3\.org\/2000\/svg"/)) {
       svgString = svgString.replace(/^<svg/, '<svg xmlns="http://www.w3.org/2000/svg"');
     }
@@ -162,7 +162,14 @@ function renderSvgToCanvas(svgElement, width, height, scale = 2, bgColor = '#fff
 
     const image = new Image();
     image.crossOrigin = 'anonymous';
+
+    const timer = setTimeout(() => {
+      URL.revokeObjectURL(blobURL);
+      reject(new Error('SVG image rendering timed out'));
+    }, 8000);
+
     image.onload = () => {
+      clearTimeout(timer);
       const canvas = document.createElement('canvas');
       canvas.width = Math.round(width * scale);
       canvas.height = Math.round(height * scale);
@@ -176,13 +183,17 @@ function renderSvgToCanvas(svgElement, width, height, scale = 2, bgColor = '#fff
       ctx.imageSmoothingQuality = 'high';
       ctx.scale(scale, scale);
       ctx.drawImage(image, 0, 0, width, height);
+
       URL.revokeObjectURL(blobURL);
       resolve(canvas);
     };
+
     image.onerror = (e) => {
+      clearTimeout(timer);
       URL.revokeObjectURL(blobURL);
-      reject(e);
+      reject(new Error('Failed to load SVG into Canvas: ' + (e?.message || 'sandbox error')));
     };
+
     image.src = blobURL;
   });
 }

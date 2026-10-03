@@ -10,9 +10,12 @@ class App {
   constructor() {
     this.state = loadInitialState();
     this.chartContainer = document.getElementById('gantt-chart-container');
+    this.scrollViewport = document.getElementById('gantt-scroll-viewport');
+    
     this.gantt = new GanttChart(this.chartContainer, {
       onTaskChange: (item) => this.handleTaskChanged(item),
-      onTaskSelect: (id) => this.openEditModal(id)
+      onTaskSelect: (id) => this.openEditModal(id),
+      onTitleClick: () => this.openTitleModal()
     });
 
     this.currentEditingId = null;
@@ -81,6 +84,19 @@ class App {
       });
     }
 
+    // Horizontal Scroll Buttons
+    document.getElementById('btn-scroll-left')?.addEventListener('click', () => {
+      if (this.scrollViewport) {
+        this.scrollViewport.scrollBy({ left: -260, behavior: 'smooth' });
+      }
+    });
+
+    document.getElementById('btn-scroll-right')?.addEventListener('click', () => {
+      if (this.scrollViewport) {
+        this.scrollViewport.scrollBy({ left: 260, behavior: 'smooth' });
+      }
+    });
+
     // Search and filter tasks
     const searchInput = document.getElementById('task-search');
     if (searchInput) {
@@ -106,11 +122,11 @@ class App {
 
     // Zoom buttons
     document.getElementById('btn-zoom-in')?.addEventListener('click', () => {
-      this.state.meta.monthWidth = Math.min(90, (this.state.meta.monthWidth || 44) + 6);
+      this.state.meta.monthWidth = Math.min(100, (this.state.meta.monthWidth || 44) + 6);
       this.saveAndRender();
     });
     document.getElementById('btn-zoom-out')?.addEventListener('click', () => {
-      this.state.meta.monthWidth = Math.max(24, (this.state.meta.monthWidth || 44) - 6);
+      this.state.meta.monthWidth = Math.max(26, (this.state.meta.monthWidth || 44) - 6);
       this.saveAndRender();
     });
 
@@ -191,17 +207,42 @@ class App {
       this.saveAndRender();
     });
 
-    // Settings form inputs
+    // Direct Title Inputs (Top of Sidebar)
+    const sidebarTitle = document.getElementById('sidebar-input-title');
+    sidebarTitle?.addEventListener('input', (e) => {
+      this.state.meta.title = e.target.value;
+      this.updateTitleInSVG();
+      saveState(this.state);
+      this.syncTitleInputs();
+    });
+
+    const sidebarSubtitle = document.getElementById('sidebar-input-subtitle');
+    sidebarSubtitle?.addEventListener('input', (e) => {
+      this.state.meta.subtitle = e.target.value;
+      this.updateTitleInSVG();
+      saveState(this.state);
+      this.syncTitleInputs();
+    });
+
+    document.getElementById('btn-quick-edit-title')?.addEventListener('click', () => {
+      this.openTitleModal();
+    });
+
+    // Settings tab form inputs
     const projectTitleInput = document.getElementById('input-project-title');
     projectTitleInput?.addEventListener('input', (e) => {
       this.state.meta.title = e.target.value;
-      this.saveAndRender();
+      this.updateTitleInSVG();
+      saveState(this.state);
+      this.syncTitleInputs();
     });
 
     const projectSubtitleInput = document.getElementById('input-project-subtitle');
     projectSubtitleInput?.addEventListener('input', (e) => {
       this.state.meta.subtitle = e.target.value;
-      this.saveAndRender();
+      this.updateTitleInSVG();
+      saveState(this.state);
+      this.syncTitleInputs();
     });
 
     const timeModeSelect = document.getElementById('select-time-mode');
@@ -222,15 +263,74 @@ class App {
       this.saveAndRender();
     });
 
-    // Toggles
     const toggleProgress = document.getElementById('toggle-show-progress');
     toggleProgress?.addEventListener('change', (e) => {
       this.state.meta.showProgress = e.target.checked;
       this.saveAndRender();
     });
 
-    // Item Modal Events
+    // Modals
     this.bindModalEvents();
+    this.bindTitleModalEvents();
+  }
+
+  updateTitleInSVG() {
+    const titleEl = document.getElementById('gantt-svg-title');
+    const subtitleEl = document.getElementById('gantt-svg-subtitle');
+    if (titleEl) {
+      titleEl.textContent = this.state.meta.title || 'Click to set project title';
+    }
+    if (subtitleEl) {
+      subtitleEl.textContent = this.state.meta.subtitle || 'Click to add grant agreement # or subtitle';
+    }
+    document.title = (this.state.meta.title ? `${this.state.meta.title} — ` : '') + 'Research Gantt';
+  }
+
+  syncTitleInputs() {
+    const sTitle = document.getElementById('sidebar-input-title');
+    const sSub = document.getElementById('sidebar-input-subtitle');
+    const mTitle = document.getElementById('input-project-title');
+    const mSub = document.getElementById('input-project-subtitle');
+
+    if (sTitle && sTitle.value !== (this.state.meta.title || '')) sTitle.value = this.state.meta.title || '';
+    if (sSub && sSub.value !== (this.state.meta.subtitle || '')) sSub.value = this.state.meta.subtitle || '';
+    if (mTitle && mTitle.value !== (this.state.meta.title || '')) mTitle.value = this.state.meta.title || '';
+    if (mSub && mSub.value !== (this.state.meta.subtitle || '')) mSub.value = this.state.meta.subtitle || '';
+  }
+
+  bindTitleModalEvents() {
+    const modal = document.getElementById('title-modal');
+    const closeBtn = document.getElementById('title-modal-close-btn');
+    const cancelBtn = document.getElementById('title-modal-cancel-btn');
+    const saveBtn = document.getElementById('title-modal-save-btn');
+
+    closeBtn?.addEventListener('click', () => modal.classList.remove('active'));
+    cancelBtn?.addEventListener('click', () => modal.classList.remove('active'));
+
+    saveBtn?.addEventListener('click', () => {
+      const newTitle = document.getElementById('modal-input-title').value.trim();
+      const newSubtitle = document.getElementById('modal-input-subtitle').value.trim();
+      const newStart = document.getElementById('modal-input-start-date').value;
+      const newDuration = parseInt(document.getElementById('modal-input-total-months').value, 10);
+
+      this.state.meta.title = newTitle;
+      this.state.meta.subtitle = newSubtitle;
+      if (newStart) this.state.meta.startDate = newStart;
+      if (newDuration && newDuration > 0) this.state.meta.totalMonths = newDuration;
+
+      modal.classList.remove('active');
+      this.saveAndRender();
+    });
+  }
+
+  openTitleModal() {
+    const modal = document.getElementById('title-modal');
+    document.getElementById('modal-input-title').value = this.state.meta.title || '';
+    document.getElementById('modal-input-subtitle').value = this.state.meta.subtitle || '';
+    document.getElementById('modal-input-start-date').value = this.state.meta.startDate || '2026-01-01';
+    document.getElementById('modal-input-total-months').value = this.state.meta.totalMonths || 36;
+    modal.classList.add('active');
+    setTimeout(() => document.getElementById('modal-input-title')?.focus(), 50);
   }
 
   bindModalEvents() {
@@ -288,7 +388,6 @@ class App {
     });
 
     // WP Modal Events
-    const wpModal = document.getElementById('wp-modal');
     document.getElementById('wp-modal-close-btn')?.addEventListener('click', () => this.closeWpModal());
     document.getElementById('wp-modal-cancel-btn')?.addEventListener('click', () => this.closeWpModal());
     document.getElementById('wp-modal-save-btn')?.addEventListener('click', () => this.saveWpFromModal());
@@ -319,19 +418,15 @@ class App {
   renderAll() {
     this.gantt.render(this.state);
     this.renderSettings();
+    this.syncTitleInputs();
     this.renderWorkPackages();
     this.renderTaskList();
     this.renderToolbarStats();
+    this.updateTitleInSVG();
   }
 
   renderSettings() {
     const meta = this.state.meta;
-    const titleInput = document.getElementById('input-project-title');
-    if (titleInput && titleInput.value !== meta.title) titleInput.value = meta.title || '';
-
-    const subtitleInput = document.getElementById('input-project-subtitle');
-    if (subtitleInput && subtitleInput.value !== meta.subtitle) subtitleInput.value = meta.subtitle || '';
-
     const timeModeSelect = document.getElementById('select-time-mode');
     if (timeModeSelect) timeModeSelect.value = meta.timeMode || 'project_months';
 
@@ -352,7 +447,6 @@ class App {
     const container = document.getElementById('wp-list-container');
     if (!container) return;
 
-    // Also update WP options in filters and task modal
     const wpFilter = document.getElementById('task-wp-filter');
     const modalWpSelect = document.getElementById('modal-wp-select');
 
@@ -360,7 +454,7 @@ class App {
     let modalWpHtml = '';
 
     let html = '';
-    this.state.workPackages.forEach((wp, index) => {
+    this.state.workPackages.forEach((wp) => {
       const count = this.state.items.filter(it => it.wpId === wp.id).length;
       html += `
         <div class="wp-card" data-id="${wp.id}">
@@ -484,13 +578,15 @@ class App {
   }
 
   handleTaskChanged(updatedItem) {
-    const idx = this.state.items.findIndex(i => i.id === updatedItem.id);
-    if (idx !== -1) {
-      this.state.items[idx] = updatedItem;
-      saveState(this.state);
-      this.renderTaskList();
-      this.renderToolbarStats();
+    if (updatedItem) {
+      const idx = this.state.items.findIndex(i => i.id === updatedItem.id);
+      if (idx !== -1) {
+        this.state.items[idx] = updatedItem;
+      }
     }
+    saveState(this.state);
+    this.renderTaskList();
+    this.renderToolbarStats();
   }
 
   openCreateModal(type = 'task') {
@@ -581,7 +677,6 @@ class App {
     }
 
     if (this.currentEditingId) {
-      // Update
       const item = this.state.items.find(i => i.id === this.currentEditingId);
       if (item) {
         item.wpId = wpId;
@@ -595,7 +690,6 @@ class App {
         item.notes = notes;
       }
     } else {
-      // Create new
       const newItem = {
         id: 'item_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
         wpId,
@@ -703,7 +797,8 @@ class App {
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
   }
 }
 
