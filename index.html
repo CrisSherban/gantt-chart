@@ -266,6 +266,16 @@
             Toggle Editor
           </button>
 
+          <!-- Undo / Redo Controls -->
+          <div class="undo-nav-group" style="display: flex; align-items: center; gap: 2px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 2px;">
+            <button id="btn-undo" class="btn btn-sm btn-icon" style="border:none; height:24px; width:24px; opacity:0.35;" title="Undo (Ctrl+Z / Cmd+Z)" disabled>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 7v6h6"></path><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"></path></svg>
+            </button>
+            <button id="btn-redo" class="btn btn-sm btn-icon" style="border:none; height:24px; width:24px; opacity:0.35;" title="Redo (Ctrl+Y / Cmd+Shift+Z)" disabled>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 7v6h-6"></path><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"></path></svg>
+            </button>
+          </div>
+
           <!-- Horizontal Scroll Navigation Buttons -->
           <div class="scroll-nav-group" style="display: flex; align-items: center; gap: 3px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 2px;">
             <button id="btn-scroll-left" class="btn btn-sm btn-icon" style="border:none; height:24px; width:24px;" title="Scroll Timeline Left">

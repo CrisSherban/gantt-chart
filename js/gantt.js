@@ -9,6 +9,8 @@ export class GanttChart {
     this.onTaskChange = options.onTaskChange || (() => {});
     this.onTaskSelect = options.onTaskSelect || (() => {});
     this.onTitleClick = options.onTitleClick || (() => {});
+    this.onDragStart = options.onDragStart || (() => {});
+    this.onDragEnd = options.onDragEnd || (() => {});
     this.tooltipEl = null;
     this.hasMoved = false;
     this.initTooltip();
@@ -25,6 +27,16 @@ export class GanttChart {
     this.tooltipEl = el;
   }
 
+  parseDateParts(dateStr) {
+    if (!dateStr) return { year: 2026, month: 1, day: 1 };
+    const str = String(dateStr).trim();
+    const parts = str.split('-');
+    const year = parseInt(parts[0], 10) || 2026;
+    const month = parseInt(parts[1], 10) || 1;
+    const day = parseInt(parts[2], 10) || 1;
+    return { year, month, day };
+  }
+
   render(data) {
     this.data = data;
     const { meta, workPackages, items } = data;
@@ -37,6 +49,11 @@ export class GanttChart {
     const titleBannerHeight = 68;
     const chartTimelineWidth = totalMonths * monthWidth;
     const totalWidth = leftColWidth + chartTimelineWidth + 24;
+
+    const timeMode = meta.timeMode || 'project_months';
+    const startParts = this.parseDateParts(meta.startDate);
+    const startYear = startParts.year;
+    const startMonth = startParts.month; // 1 to 12
 
     // Calculate visible rows and aggregate spans
     const visibleRows = [];
@@ -156,8 +173,23 @@ export class GanttChart {
     // Vertical Month Grid Lines behind rows
     for (let m = 0; m <= totalMonths; m++) {
       const gx = leftColWidth + m * monthWidth;
-      const isYearBoundary = (m > 0 && m % 12 === 0);
-      const isQuarterBoundary = (m > 0 && m % 3 === 0);
+      let isYearBoundary = false;
+      let isQuarterBoundary = false;
+
+      if (timeMode === 'calendar') {
+        if (m > 0 && m < totalMonths) {
+          const totalM = (startMonth - 1) + (m - 1);
+          const nextTotalM = totalM + 1;
+          const currentYear = startYear + Math.floor(totalM / 12);
+          const nextYear = startYear + Math.floor(nextTotalM / 12);
+          isYearBoundary = (currentYear !== nextYear);
+          isQuarterBoundary = ((totalM + 1) % 3 === 0);
+        }
+      } else {
+        isYearBoundary = (m > 0 && m % 12 === 0);
+        isQuarterBoundary = (m > 0 && m % 3 === 0);
+      }
+
       const strokeCol = isYearBoundary ? themeStyles.yearGridBorder : (isQuarterBoundary ? themeStyles.quarterGridBorder : themeStyles.gridLine);
       const strokeW = isYearBoundary ? 1.5 : (isQuarterBoundary ? 1 : 0.75);
 
@@ -353,61 +385,139 @@ export class GanttChart {
   generateTimeHeaders(meta, totalMonths, monthWidth, leftColWidth, themeStyles) {
     const parts = [];
     const timeMode = meta.timeMode || 'project_months';
-    const startDate = meta.startDate ? new Date(meta.startDate) : new Date(2026, 0, 1);
+    const startParts = this.parseDateParts(meta.startDate);
+    const startYear = startParts.year;
+    const startMonth = startParts.month; // 1 to 12
 
     const y1Height = 32;
     const y2Height = 38;
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-    // Grouping by year (every 12 months)
-    const numYears = Math.ceil(totalMonths / 12);
-    for (let yr = 0; yr < numYears; yr++) {
-      const startM = yr * 12 + 1;
-      const endM = Math.min((yr + 1) * 12, totalMonths);
-      const spanMonths = endM - startM + 1;
-      const x = leftColWidth + (startM - 1) * monthWidth;
-      const w = spanMonths * monthWidth;
+    if (timeMode === 'calendar') {
+      // Group consecutive month columns by their actual calendar year
+      const yearGroups = [];
+      let currentGroup = null;
 
-      let yearLabel = `Year ${yr + 1}`;
-      if (timeMode === 'calendar') {
-        const calYear = startDate.getFullYear() + yr;
-        yearLabel = `${calYear}`;
-      } else if (timeMode === 'quarters') {
-        yearLabel = `Year ${yr + 1} (Q${yr * 4 + 1}–Q${Math.min((yr + 1) * 4, Math.ceil(totalMonths / 3))})`;
-      } else {
-        yearLabel = `Project Year ${yr + 1} (Months ${startM}–${endM})`;
+      for (let m = 1; m <= totalMonths; m++) {
+        const offset = m - 1;
+        const totalM = (startMonth - 1) + offset;
+        const calYear = startYear + Math.floor(totalM / 12);
+
+        if (!currentGroup || currentGroup.year !== calYear) {
+          if (currentGroup) {
+            yearGroups.push(currentGroup);
+          }
+          currentGroup = {
+            year: calYear,
+            startMonthIdx: m,
+            count: 1
+          };
+        } else {
+          currentGroup.count++;
+        }
+      }
+      if (currentGroup) {
+        yearGroups.push(currentGroup);
       }
 
-      parts.push(`
-        <rect x="${x}" y="0" width="${w}" height="${y1Height}" fill="${yr % 2 === 0 ? themeStyles.yearHeaderBgEven : themeStyles.yearHeaderBgOdd}" stroke="${themeStyles.gridBorder}" stroke-width="0.8"/>
-        <text x="${x + w / 2}" y="${y1Height / 2}" text-anchor="middle" dominant-baseline="central" font-size="11.5" font-weight="700" fill="${themeStyles.titleText}">
-          ${yearLabel}
-        </text>
-      `);
-    }
+      // Render Year Row (Row 1)
+      yearGroups.forEach((grp, idx) => {
+        const x = leftColWidth + (grp.startMonthIdx - 1) * monthWidth;
+        const w = grp.count * monthWidth;
+        const bg = (idx % 2 === 0) ? themeStyles.yearHeaderBgEven : themeStyles.yearHeaderBgOdd;
 
-    // Subheader: Individual months
-    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    for (let m = 1; m <= totalMonths; m++) {
-      const x = leftColWidth + (m - 1) * monthWidth;
-      let mLabel = `M${m}`;
+        parts.push(`
+          <rect x="${x}" y="0" width="${w}" height="${y1Height}" fill="${bg}" stroke="${themeStyles.gridBorder}" stroke-width="0.8"/>
+          <text x="${x + w / 2}" y="${y1Height / 2}" text-anchor="middle" dominant-baseline="central" font-size="11.5" font-weight="700" fill="${themeStyles.titleText}">
+            ${grp.year}
+          </text>
+        `);
+      });
 
-      if (timeMode === 'calendar') {
-        const d = new Date(startDate.getFullYear(), startDate.getMonth() + (m - 1), 1);
-        mLabel = monthNames[d.getMonth()];
-      } else if (timeMode === 'quarters') {
+      // Render Month Subheader Row (Row 2)
+      for (let m = 1; m <= totalMonths; m++) {
+        const offset = m - 1;
+        const totalM = (startMonth - 1) + offset;
+        const calMonth = totalM % 12;
+        const x = leftColWidth + (m - 1) * monthWidth;
+        const isYearStart = (calMonth === 0 && m > 1);
+        const isQuarterEnd = (calMonth + 1) % 3 === 0;
+
+        let mLabel = monthNames[calMonth];
+
+        parts.push(`
+          <rect x="${x}" y="${y1Height}" width="${monthWidth}" height="${y2Height}" fill="${themeStyles.monthHeaderBg}" stroke="${themeStyles.gridBorder}" stroke-width="0.6"/>
+          <text x="${x + monthWidth / 2}" y="${y1Height + y2Height / 2}" text-anchor="middle" dominant-baseline="central" font-size="10.5" font-weight="${(isQuarterEnd || isYearStart) ? '700' : '500'}" fill="${isYearStart ? themeStyles.titleText : (isQuarterEnd ? themeStyles.titleText : themeStyles.subtitleText)}">
+            ${mLabel}
+          </text>
+        `);
+      }
+    } else if (timeMode === 'quarters') {
+      // Grouping by Project Year (every 4 quarters = 12 months)
+      const numYears = Math.ceil(totalMonths / 12);
+      for (let yr = 0; yr < numYears; yr++) {
+        const startM = yr * 12 + 1;
+        const endM = Math.min((yr + 1) * 12, totalMonths);
+        const spanMonths = endM - startM + 1;
+        const x = leftColWidth + (startM - 1) * monthWidth;
+        const w = spanMonths * monthWidth;
+        const startQ = yr * 4 + 1;
+        const endQ = Math.min((yr + 1) * 4, Math.ceil(totalMonths / 3));
+
+        parts.push(`
+          <rect x="${x}" y="0" width="${w}" height="${y1Height}" fill="${yr % 2 === 0 ? themeStyles.yearHeaderBgEven : themeStyles.yearHeaderBgOdd}" stroke="${themeStyles.gridBorder}" stroke-width="0.8"/>
+          <text x="${x + w / 2}" y="${y1Height / 2}" text-anchor="middle" dominant-baseline="central" font-size="11.5" font-weight="700" fill="${themeStyles.titleText}">
+            Year ${yr + 1} (Q${startQ}–Q${endQ})
+          </text>
+        `);
+      }
+
+      // Subheader: Individual months with Quarter indicator
+      for (let m = 1; m <= totalMonths; m++) {
+        const x = leftColWidth + (m - 1) * monthWidth;
         const qNum = Math.ceil(m / 3);
         const mInQ = ((m - 1) % 3) + 1;
-        mLabel = `Q${qNum}.${mInQ}`;
+        const mLabel = `Q${qNum}.${mInQ}`;
+        const isQuarterEnd = m % 3 === 0;
+
+        parts.push(`
+          <rect x="${x}" y="${y1Height}" width="${monthWidth}" height="${y2Height}" fill="${themeStyles.monthHeaderBg}" stroke="${themeStyles.gridBorder}" stroke-width="0.6"/>
+          <text x="${x + monthWidth / 2}" y="${y1Height + y2Height / 2}" text-anchor="middle" dominant-baseline="central" font-size="10.5" font-weight="${isQuarterEnd ? '700' : '500'}" fill="${isQuarterEnd ? themeStyles.titleText : themeStyles.subtitleText}">
+            ${mLabel}
+          </text>
+        `);
+      }
+    } else {
+      // Default: Project Months (M1 - MN grouped by Project Year)
+      const numYears = Math.ceil(totalMonths / 12);
+      for (let yr = 0; yr < numYears; yr++) {
+        const startM = yr * 12 + 1;
+        const endM = Math.min((yr + 1) * 12, totalMonths);
+        const spanMonths = endM - startM + 1;
+        const x = leftColWidth + (startM - 1) * monthWidth;
+        const w = spanMonths * monthWidth;
+
+        parts.push(`
+          <rect x="${x}" y="0" width="${w}" height="${y1Height}" fill="${yr % 2 === 0 ? themeStyles.yearHeaderBgEven : themeStyles.yearHeaderBgOdd}" stroke="${themeStyles.gridBorder}" stroke-width="0.8"/>
+          <text x="${x + w / 2}" y="${y1Height / 2}" text-anchor="middle" dominant-baseline="central" font-size="11.5" font-weight="700" fill="${themeStyles.titleText}">
+            Project Year ${yr + 1} (Months ${startM}–${endM})
+          </text>
+        `);
       }
 
-      const isQuarterEnd = m % 3 === 0;
+      // Subheader: M1, M2...
+      for (let m = 1; m <= totalMonths; m++) {
+        const x = leftColWidth + (m - 1) * monthWidth;
+        const mLabel = `M${m}`;
+        const isQuarterEnd = m % 3 === 0;
 
-      parts.push(`
-        <rect x="${x}" y="${y1Height}" width="${monthWidth}" height="${y2Height}" fill="${themeStyles.monthHeaderBg}" stroke="${themeStyles.gridBorder}" stroke-width="0.6"/>
-        <text x="${x + monthWidth / 2}" y="${y1Height + y2Height / 2}" text-anchor="middle" dominant-baseline="central" font-size="10.5" font-weight="${isQuarterEnd ? '700' : '500'}" fill="${isQuarterEnd ? themeStyles.titleText : themeStyles.subtitleText}">
-          ${mLabel}
-        </text>
-      `);
+        parts.push(`
+          <rect x="${x}" y="${y1Height}" width="${monthWidth}" height="${y2Height}" fill="${themeStyles.monthHeaderBg}" stroke="${themeStyles.gridBorder}" stroke-width="0.6"/>
+          <text x="${x + monthWidth / 2}" y="${y1Height + y2Height / 2}" text-anchor="middle" dominant-baseline="central" font-size="10.5" font-weight="${isQuarterEnd ? '700' : '500'}" fill="${isQuarterEnd ? themeStyles.titleText : themeStyles.subtitleText}">
+            ${mLabel}
+          </text>
+        `);
+      }
     }
 
     return parts.join('');
@@ -493,6 +603,7 @@ export class GanttChart {
         initialMouseX = e.clientX;
         origStartMonth = item.startMonth;
         origEndMonth = item.endMonth;
+        this.onDragStart();
       } else if (taskBar || marker) {
         const targetNode = taskBar || marker;
         currentItemId = targetNode.getAttribute('data-id');
@@ -505,6 +616,7 @@ export class GanttChart {
         initialMouseX = e.clientX;
         origStartMonth = item.startMonth;
         origEndMonth = item.endMonth;
+        this.onDragStart();
       }
     };
 
@@ -552,6 +664,9 @@ export class GanttChart {
 
     const onMouseUp = () => {
       if (isDragging) {
+        if (this.hasMoved) {
+          this.onDragEnd();
+        }
         isDragging = false;
         dragType = null;
         currentItemId = null;

@@ -12,10 +12,31 @@ class App {
     this.chartContainer = document.getElementById('gantt-chart-container');
     this.scrollViewport = document.getElementById('gantt-scroll-viewport');
     
+    // Undo / Redo history stacks
+    this.history = [];
+    this.redoStack = [];
+    this.maxHistory = 50;
+    this.preDragState = null;
+
     this.gantt = new GanttChart(this.chartContainer, {
       onTaskChange: (item) => this.handleTaskChanged(item),
       onTaskSelect: (id) => this.openEditModal(id),
-      onTitleClick: () => this.openTitleModal()
+      onTitleClick: () => this.openTitleModal(),
+      onDragStart: () => {
+        this.preDragState = JSON.stringify(this.state);
+      },
+      onDragEnd: () => {
+        if (this.preDragState && this.preDragState !== JSON.stringify(this.state)) {
+          this.history.push(this.preDragState);
+          if (this.history.length > this.maxHistory) {
+            this.history.shift();
+          }
+          this.redoStack = [];
+          this.updateUndoRedoButtons();
+          saveState(this.state);
+        }
+        this.preDragState = null;
+      }
     });
 
     this.currentEditingId = null;
@@ -26,6 +47,58 @@ class App {
     this.initDOM();
     this.bindEvents();
     this.renderAll();
+    this.updateUndoRedoButtons();
+  }
+
+  pushHistory() {
+    const snapshot = JSON.stringify(this.state);
+    if (this.history.length === 0 || this.history[this.history.length - 1] !== snapshot) {
+      this.history.push(snapshot);
+      if (this.history.length > this.maxHistory) {
+        this.history.shift();
+      }
+    }
+    this.redoStack = [];
+    this.updateUndoRedoButtons();
+  }
+
+  undo() {
+    if (this.history.length === 0) return;
+    const currentSnapshot = JSON.stringify(this.state);
+    this.redoStack.push(currentSnapshot);
+
+    const prevSnapshot = this.history.pop();
+    this.state = JSON.parse(prevSnapshot);
+    saveState(this.state);
+    this.renderAll();
+    this.updateUndoRedoButtons();
+  }
+
+  redo() {
+    if (this.redoStack.length === 0) return;
+    const currentSnapshot = JSON.stringify(this.state);
+    this.history.push(currentSnapshot);
+
+    const nextSnapshot = this.redoStack.pop();
+    this.state = JSON.parse(nextSnapshot);
+    saveState(this.state);
+    this.renderAll();
+    this.updateUndoRedoButtons();
+  }
+
+  updateUndoRedoButtons() {
+    const undoBtn = document.getElementById('btn-undo');
+    const redoBtn = document.getElementById('btn-redo');
+    if (undoBtn) {
+      undoBtn.disabled = (this.history.length === 0);
+      undoBtn.style.opacity = (this.history.length === 0) ? '0.35' : '1';
+      undoBtn.style.cursor = (this.history.length === 0) ? 'default' : 'pointer';
+    }
+    if (redoBtn) {
+      redoBtn.disabled = (this.redoStack.length === 0);
+      redoBtn.style.opacity = (this.redoStack.length === 0) ? '0.35' : '1';
+      redoBtn.style.cursor = (this.redoStack.length === 0) ? 'default' : 'pointer';
+    }
   }
 
   initDOM() {
@@ -48,6 +121,33 @@ class App {
   }
 
   bindEvents() {
+    // Undo / Redo toolbar buttons
+    document.getElementById('btn-undo')?.addEventListener('click', () => this.undo());
+    document.getElementById('btn-redo')?.addEventListener('click', () => this.redo());
+
+    // Keyboard shortcuts for Undo (Ctrl+Z / Cmd+Z) and Redo (Ctrl+Y / Cmd+Shift+Z)
+    window.addEventListener('keydown', (e) => {
+      const activeEl = document.activeElement;
+      const isInput = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA');
+
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
+        if (!isInput) {
+          if (e.shiftKey) {
+            e.preventDefault();
+            this.redo();
+          } else {
+            e.preventDefault();
+            this.undo();
+          }
+        }
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'y') {
+        if (!isInput) {
+          e.preventDefault();
+          this.redo();
+        }
+      }
+    });
+
     // Preset selector
     const presetSelect = document.getElementById('preset-select');
     if (presetSelect) {
@@ -55,6 +155,7 @@ class App {
         const key = e.target.value;
         if (PRESETS[key]) {
           if (confirm('Load this template? Current unsaved custom work will be replaced.')) {
+            this.pushHistory();
             this.state = JSON.parse(JSON.stringify(PRESETS[key]));
             this.saveAndRender();
           }
@@ -165,6 +266,7 @@ class App {
       const file = e.target.files?.[0];
       if (file) {
         try {
+          this.pushHistory();
           this.state = await importJSONFile(file);
           this.saveAndRender();
           alert('Project imported successfully!');
@@ -189,6 +291,7 @@ class App {
         const reader = new FileReader();
         reader.onload = (re) => {
           try {
+            this.pushHistory();
             this.state = importCSVText(re.target.result, this.state);
             this.saveAndRender();
             alert('CSV imported successfully!');
@@ -203,12 +306,16 @@ class App {
 
     // Theme selector
     document.getElementById('theme-select')?.addEventListener('change', (e) => {
+      this.pushHistory();
       this.state.meta.theme = e.target.value;
       this.saveAndRender();
     });
 
     // Direct Title Inputs (Top of Sidebar)
     const sidebarTitle = document.getElementById('sidebar-input-title');
+    sidebarTitle?.addEventListener('focus', () => {
+      this.pushHistory();
+    });
     sidebarTitle?.addEventListener('input', (e) => {
       this.state.meta.title = e.target.value;
       this.updateTitleInSVG();
@@ -217,6 +324,9 @@ class App {
     });
 
     const sidebarSubtitle = document.getElementById('sidebar-input-subtitle');
+    sidebarSubtitle?.addEventListener('focus', () => {
+      this.pushHistory();
+    });
     sidebarSubtitle?.addEventListener('input', (e) => {
       this.state.meta.subtitle = e.target.value;
       this.updateTitleInSVG();
@@ -230,6 +340,9 @@ class App {
 
     // Settings tab form inputs
     const projectTitleInput = document.getElementById('input-project-title');
+    projectTitleInput?.addEventListener('focus', () => {
+      this.pushHistory();
+    });
     projectTitleInput?.addEventListener('input', (e) => {
       this.state.meta.title = e.target.value;
       this.updateTitleInSVG();
@@ -238,6 +351,9 @@ class App {
     });
 
     const projectSubtitleInput = document.getElementById('input-project-subtitle');
+    projectSubtitleInput?.addEventListener('focus', () => {
+      this.pushHistory();
+    });
     projectSubtitleInput?.addEventListener('input', (e) => {
       this.state.meta.subtitle = e.target.value;
       this.updateTitleInSVG();
@@ -247,24 +363,28 @@ class App {
 
     const timeModeSelect = document.getElementById('select-time-mode');
     timeModeSelect?.addEventListener('change', (e) => {
+      this.pushHistory();
       this.state.meta.timeMode = e.target.value;
       this.saveAndRender();
     });
 
     const startDateInput = document.getElementById('input-start-date');
     startDateInput?.addEventListener('change', (e) => {
+      this.pushHistory();
       this.state.meta.startDate = e.target.value;
       this.saveAndRender();
     });
 
     const totalMonthsInput = document.getElementById('input-total-months');
     totalMonthsInput?.addEventListener('change', (e) => {
+      this.pushHistory();
       this.state.meta.totalMonths = Math.max(1, parseInt(e.target.value, 10) || 36);
       this.saveAndRender();
     });
 
     const toggleProgress = document.getElementById('toggle-show-progress');
     toggleProgress?.addEventListener('change', (e) => {
+      this.pushHistory();
       this.state.meta.showProgress = e.target.checked;
       this.saveAndRender();
     });
@@ -308,6 +428,7 @@ class App {
     cancelBtn?.addEventListener('click', () => modal.classList.remove('active'));
 
     saveBtn?.addEventListener('click', () => {
+      this.pushHistory();
       const newTitle = document.getElementById('modal-input-title').value.trim();
       const newSubtitle = document.getElementById('modal-input-subtitle').value.trim();
       const newStart = document.getElementById('modal-input-start-date').value;
@@ -346,6 +467,7 @@ class App {
     deleteBtn?.addEventListener('click', () => {
       if (this.currentEditingId) {
         if (confirm('Are you sure you want to delete this item?')) {
+          this.pushHistory();
           this.state.items = this.state.items.filter(it => it.id !== this.currentEditingId);
           this.closeItemModal();
           this.saveAndRender();
@@ -423,6 +545,7 @@ class App {
     this.renderTaskList();
     this.renderToolbarStats();
     this.updateTitleInSVG();
+    this.updateUndoRedoButtons();
   }
 
   renderSettings() {
@@ -660,6 +783,8 @@ class App {
       return;
     }
 
+    this.pushHistory();
+
     const type = document.querySelector('#modal-type-selector .pill-option.active')?.getAttribute('data-type') || 'task';
     const wpId = document.getElementById('modal-wp-select').value;
     const code = document.getElementById('modal-item-code').value.trim();
@@ -752,6 +877,8 @@ class App {
       return;
     }
 
+    this.pushHistory();
+
     if (this.currentEditingWpId) {
       const wp = this.state.workPackages.find(w => w.id === this.currentEditingWpId);
       if (wp) {
@@ -785,6 +912,7 @@ class App {
       return;
     }
     if (confirm('Are you sure you want to delete this Work Package?')) {
+      this.pushHistory();
       this.state.workPackages = this.state.workPackages.filter(w => w.id !== this.currentEditingWpId);
       this.closeWpModal();
       this.saveAndRender();
@@ -797,8 +925,7 @@ class App {
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&apos;');
+      .replace(/"/g, '&quot;');
   }
 }
 
