@@ -10,6 +10,8 @@ export class GanttChart {
     this.onTaskSelect = options.onTaskSelect || (() => {});
     this.onTitleClick = options.onTitleClick || (() => {});
     this.onTaskReorder = options.onTaskReorder || (() => {});
+    this.onColWidthChange = options.onColWidthChange || (() => {});
+    this.onAutoFitColWidth = options.onAutoFitColWidth || (() => {});
     this.onDragStart = options.onDragStart || (() => {});
     this.onDragEnd = options.onDragEnd || (() => {});
     this.tooltipEl = null;
@@ -42,7 +44,7 @@ export class GanttChart {
     this.data = data;
     const { meta, workPackages, items } = data;
 
-    const leftColWidth = meta.compactView ? 260 : 350;
+    const leftColWidth = meta.leftColWidth || (meta.compactView ? 260 : 350);
     const monthWidth = meta.monthWidth || 44;
     const totalMonths = Math.max(1, meta.totalMonths || 36);
     const rowHeight = meta.rowHeight || 38;
@@ -92,6 +94,7 @@ export class GanttChart {
     this.rowHeight = rowHeight;
     this.headerHeight = headerHeight;
     this.titleBannerHeight = titleBannerHeight;
+    this.leftColWidth = leftColWidth;
 
     const totalRowsHeight = visibleRows.length * rowHeight;
     const legendHeight = 44;
@@ -228,7 +231,7 @@ export class GanttChart {
 
             <!-- WP Left label -->
             <text x="26" y="${rowCenterY}" dominant-baseline="central" font-size="12.5" font-weight="700" fill="${themeStyles.titleText}">
-              <tspan fill="${row.wp.color}" font-weight="800">${this.escapeXML(row.wp.code)}:</tspan> ${this.escapeXML(row.wp.name)}
+              <tspan fill="${row.wp.color}" font-weight="800">${this.escapeXML(row.wp.code)}:</tspan> ${this.escapeXML(this.truncate(row.wp.name, Math.max(24, Math.floor((leftColWidth - 130) / 7.2))))}
             </text>
             <text x="${leftColWidth - 14}" y="${rowCenterY}" text-anchor="end" dominant-baseline="central" font-size="10" fill="${themeStyles.metaText}">
               ${row.itemCount} items ${row.wp.collapsed ? '(click to expand)' : ''}
@@ -246,6 +249,11 @@ export class GanttChart {
         const isMilestone = item.type === 'milestone';
         const isDeliverable = item.type === 'deliverable';
         const badgeWidth = isMilestone ? 32 : (isDeliverable ? 36 : 40);
+
+        // Dynamically calculate title truncation limit based on expanded column width
+        const leadWidth = item.lead ? (item.lead.length + 3) * 6 : 0;
+        const titleAvailWidth = Math.max(120, leftColWidth - (24 + badgeWidth) - 75 - leadWidth);
+        const maxTitleChars = Math.max(20, Math.floor(titleAvailWidth / 6.2));
 
         svgParts.push(`
           <g class="gantt-item-row" data-id="${item.id}" data-wpid="${row.wp.id}">
@@ -273,7 +281,7 @@ export class GanttChart {
 
             <!-- Title & Lead -->
             <text x="${24 + badgeWidth}" y="${rowCenterY}" dominant-baseline="central" font-size="11.5" font-weight="500" fill="${themeStyles.bodyText}" class="item-title-text">
-              ${this.escapeXML(this.truncate(item.title, meta.compactView ? 24 : 34))}
+              ${this.escapeXML(this.truncate(item.title, maxTitleChars))}
               ${item.lead ? `<tspan fill="${themeStyles.metaText}" font-size="10"> (${this.escapeXML(item.lead)})</tspan>` : ''}
             </text>
 
@@ -366,6 +374,19 @@ export class GanttChart {
     `);
 
     svgParts.push(`</g>`); // End rows group
+
+    // Interactive Column Divider Resize Handle (between Left Column and Timeline)
+    const dividerH = headerHeight + totalRowsHeight;
+    svgParts.push(`
+      <g class="col-divider-handle" data-leftcolwidth="${leftColWidth}" title="Drag horizontally to stretch first column • Double-click to auto-fit longest title" style="cursor: col-resize;">
+        <!-- Transparent wide hit area for easy mouse grabbing -->
+        <rect x="${leftColWidth - 6}" y="0" width="12" height="${dividerH}" fill="transparent" style="cursor: col-resize;"/>
+        <!-- Visual border line -->
+        <line x1="${leftColWidth}" y1="0" x2="${leftColWidth}" y2="${dividerH}" stroke="${themeStyles.gridBorder}" stroke-width="1.5"/>
+        <!-- Small visual grip notch in the header -->
+        <rect x="${leftColWidth - 2.5}" y="${headerHeight / 2 - 10}" width="5" height="20" rx="2" fill="${themeStyles.metaText}" opacity="0.4" style="pointer-events: none;"/>
+      </g>
+    `);
 
     // Bottom Legend
     const legendY = headerHeight + totalRowsHeight + 14;
@@ -599,23 +620,44 @@ export class GanttChart {
       });
     });
 
-    // Drag-to-move, Drag-to-resize, and Drag-to-reorder handlers
+    // Drag-to-move, Drag-to-resize, Drag-to-reorder, and Column-resize handlers
     let isDragging = false;
-    let dragType = null; // 'move' | 'resize-right' | 'row-reorder'
+    let dragType = null; // 'move' | 'resize-right' | 'row-reorder' | 'col-resize'
     let currentItemId = null;
     let initialMouseX = 0;
     let initialMouseY = 0;
     let origStartMonth = 1;
     let origEndMonth = 1;
+    let origLeftColWidth = leftColWidth;
     let pendingRowTarget = null;
 
+    // Double-click column divider to auto-fit longest title
+    svg.querySelectorAll('.col-divider-handle').forEach(el => {
+      el.addEventListener('dblclick', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.onAutoFitColWidth();
+      });
+    });
+
     const onMouseDown = (e) => {
+      const colDivider = e.target.closest('.col-divider-handle');
       const rowDragHandle = e.target.closest('.svg-row-drag-handle');
       const resizeHandle = e.target.closest('.resize-right');
       const taskBar = e.target.closest('.gantt-task-bar');
       const marker = e.target.closest('.gantt-milestone-marker, .gantt-deliverable-marker');
 
-      if (rowDragHandle) {
+      if (colDivider) {
+        e.preventDefault();
+        e.stopPropagation();
+        isDragging = true;
+        this.hasMoved = false;
+        dragType = 'col-resize';
+        initialMouseX = e.clientX;
+        origLeftColWidth = this.leftColWidth || leftColWidth;
+        this.onDragStart();
+        return;
+      } else if (rowDragHandle) {
         e.preventDefault();
         e.stopPropagation();
         currentItemId = rowDragHandle.getAttribute('data-id');
@@ -656,7 +698,24 @@ export class GanttChart {
     };
 
     const onMouseMove = (e) => {
-      if (!isDragging || !currentItemId) return;
+      if (!isDragging) return;
+
+      if (dragType === 'col-resize') {
+        const deltaX = e.clientX - initialMouseX;
+        if (Math.abs(deltaX) > 2) {
+          this.hasMoved = true;
+        }
+        const newLeftColWidth = Math.max(220, Math.min(650, origLeftColWidth + deltaX));
+        const currentW = this.data.meta.leftColWidth || this.leftColWidth || 350;
+        if (newLeftColWidth !== currentW) {
+          this.data.meta.leftColWidth = newLeftColWidth;
+          this.render(this.data);
+          this.onColWidthChange(newLeftColWidth);
+        }
+        return;
+      }
+
+      if (!currentItemId) return;
 
       if (dragType === 'row-reorder') {
         const deltaY = Math.abs(e.clientY - initialMouseY);
@@ -742,6 +801,16 @@ export class GanttChart {
       if (isDragging) {
         const dropLine = svg.querySelector('#svg-row-drop-indicator');
         if (dropLine) dropLine.style.display = 'none';
+
+        if (dragType === 'col-resize') {
+          if (this.hasMoved) {
+            this.onDragEnd();
+          }
+          isDragging = false;
+          dragType = null;
+          setTimeout(() => { this.hasMoved = false; }, 80);
+          return;
+        }
 
         if (dragType === 'row-reorder') {
           if (this.hasMoved && pendingRowTarget && currentItemId) {

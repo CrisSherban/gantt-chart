@@ -23,6 +23,8 @@ class App {
       onTaskSelect: (id) => this.openEditModal(id),
       onTitleClick: () => this.openTitleModal(),
       onTaskReorder: (sourceId, targetId, insertAfter) => this.reorderTask(sourceId, targetId, insertAfter),
+      onColWidthChange: (newWidth) => this.handleColWidthChange(newWidth),
+      onAutoFitColWidth: () => this.autoFitTaskColumnWidth(),
       onDragStart: () => {
         this.preDragState = JSON.stringify(this.state);
       },
@@ -511,11 +513,36 @@ class App {
       this.saveAndRender();
     });
 
-    // Compact Left Column toggle
-    document.getElementById('toggle-compact-left-col')?.addEventListener('change', (e) => {
+    // Task & WP Names Column Width Slider
+    const colWidthSlider = document.getElementById('input-left-col-width');
+    colWidthSlider?.addEventListener('input', (e) => {
+      const val = parseInt(e.target.value, 10);
+      this.state.meta.leftColWidth = val;
+      this.syncColWidthDisplays(val);
+      this.gantt.render(this.state);
+      saveState(this.state);
+    });
+    colWidthSlider?.addEventListener('change', () => {
       this.pushHistory();
-      this.state.meta.compactView = e.target.checked;
-      this.saveAndRender();
+      saveState(this.state);
+    });
+
+    // Task & WP Names Column Width Presets
+    document.querySelectorAll('.btn-col-preset').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const width = parseInt(btn.getAttribute('data-width'), 10);
+        if (width) {
+          this.pushHistory();
+          this.state.meta.leftColWidth = width;
+          this.syncColWidthDisplays(width);
+          this.saveAndRender();
+        }
+      });
+    });
+
+    // Auto-Fit Column Width Button
+    document.getElementById('btn-autofit-col-width')?.addEventListener('click', () => {
+      this.autoFitTaskColumnWidth();
     });
 
     // Ctrl/Cmd/Alt + Wheel zoom for horizontal stretch
@@ -713,11 +740,44 @@ class App {
     // Sync Stretch Sliders and Row Height
     this.syncStretchDisplays(meta.monthWidth || 44);
 
+    const colWidth = meta.leftColWidth || (meta.compactView ? 260 : 350);
+    this.syncColWidthDisplays(colWidth);
+
     const rowHeightSelect = document.getElementById('select-row-height');
     if (rowHeightSelect) rowHeightSelect.value = String(meta.rowHeight || 38);
+  }
 
-    const toggleCompactCol = document.getElementById('toggle-compact-left-col');
-    if (toggleCompactCol) toggleCompactCol.checked = !!meta.compactView;
+  handleColWidthChange(newWidth) {
+    this.syncColWidthDisplays(newWidth);
+    saveState(this.state);
+  }
+
+  syncColWidthDisplays(val) {
+    const width = val || 350;
+    const slider = document.getElementById('input-left-col-width');
+    const label = document.getElementById('label-left-col-width-val');
+    if (slider && parseInt(slider.value, 10) !== width) slider.value = width;
+    if (label) label.textContent = `${width}px`;
+  }
+
+  autoFitTaskColumnWidth() {
+    let maxLen = 0;
+    this.state.items.forEach(it => {
+      const fullLen = (it.title || '').length + (it.lead ? it.lead.length + 3 : 0);
+      if (fullLen > maxLen) maxLen = fullLen;
+    });
+    this.state.workPackages.forEach(wp => {
+      const wpLen = (wp.code ? wp.code.length + 2 : 0) + (wp.name || '').length;
+      if (wpLen > maxLen) maxLen = wpLen;
+    });
+
+    const neededWidth = Math.round(maxLen * 6.8) + 140;
+    const clampedWidth = Math.max(280, Math.min(650, neededWidth));
+
+    this.pushHistory();
+    this.state.meta.leftColWidth = clampedWidth;
+    this.syncColWidthDisplays(clampedWidth);
+    this.saveAndRender();
   }
 
   syncStretchDisplays(val) {
@@ -735,7 +795,7 @@ class App {
 
   autoStretchLandscape() {
     const meta = this.state.meta;
-    const leftColWidth = meta.compactView ? 260 : 350;
+    const leftColWidth = meta.leftColWidth || (meta.compactView ? 260 : 350);
     const totalMonths = Math.max(1, meta.totalMonths || 36);
     const rowHeight = meta.rowHeight || 38;
     const visibleRowsCount = this.state.workPackages.length + this.state.items.length;

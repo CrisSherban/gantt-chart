@@ -278,10 +278,28 @@
               </button>
             </div>
 
-            <!-- Horizontal Stretch Slider -->
-            <div class="form-group" style="margin-bottom: 12px;">
+            <!-- First Column Width (Task & WP Names) Slider -->
+            <div class="form-group" style="margin-bottom: 14px;">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
-                <label class="form-label" style="margin-bottom: 0;" for="input-settings-stretch">Timeline Column Width</label>
+                <label class="form-label" style="margin-bottom: 0;" for="input-left-col-width">Task & WP Names Column Width</label>
+                <span id="label-left-col-width-val" style="font-size: 12px; font-weight: 700; color: var(--primary);">350px</span>
+              </div>
+              <input type="range" id="input-left-col-width" min="240" max="600" value="350" step="10" style="width: 100%; cursor: pointer; accent-color: var(--primary);" title="Stretch first column to fit longer titles without truncation">
+              
+              <!-- Quick First Column Presets -->
+              <div style="display: flex; gap: 4px; margin-top: 8px;">
+                <button type="button" class="btn btn-xs btn-col-preset" data-width="260" style="flex: 1;" title="Compact (260px)">260px</button>
+                <button type="button" class="btn btn-xs btn-col-preset" data-width="350" style="flex: 1;" title="Standard (350px)">350px</button>
+                <button type="button" class="btn btn-xs btn-col-preset" data-width="450" style="flex: 1;" title="Wide (450px)">450px</button>
+                <button type="button" class="btn btn-xs btn-col-preset" data-width="550" style="flex: 1;" title="Extra-Wide (550px)">550px</button>
+                <button type="button" class="btn btn-xs btn-primary" id="btn-autofit-col-width" style="font-size: 10.5px;" title="Auto-expand column to fit longest title">Auto-Fit</button>
+              </div>
+            </div>
+
+            <!-- Horizontal Stretch Timeline Slider -->
+            <div class="form-group" style="margin-bottom: 14px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                <label class="form-label" style="margin-bottom: 0;" for="input-settings-stretch">Timeline Columns Width</label>
                 <span id="label-settings-stretch-val" style="font-size: 12px; font-weight: 700; color: var(--primary);">44px</span>
               </div>
               <input type="range" id="input-settings-stretch" min="26" max="180" value="44" step="2" style="width: 100%; cursor: pointer; accent-color: var(--primary);">
@@ -296,22 +314,13 @@
             </div>
 
             <!-- Row Density / Vertical Spacing -->
-            <div class="form-group" style="margin-bottom: 12px;">
+            <div class="form-group" style="margin-bottom: 6px;">
               <label class="form-label" for="select-row-height">Vertical Row Height</label>
               <select id="select-row-height" class="form-control" style="font-size: 12px;">
                 <option value="30">Compact (30px) — Maximizes Landscape</option>
                 <option value="38" selected>Standard (38px)</option>
                 <option value="46">Spacious (46px)</option>
               </select>
-            </div>
-
-            <!-- Compact Left Task Column Toggle -->
-            <div class="toggle-group" style="border-bottom: none;">
-              <span class="toggle-label" style="font-size: 12px;">Compact Task Names Column (260px)</span>
-              <label class="switch">
-                <input type="checkbox" id="toggle-compact-left-col">
-                <span class="slider"></span>
-              </label>
             </div>
           </div>
         </div>

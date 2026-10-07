@@ -459,6 +459,21 @@ body {
   opacity: 0.95 !important;
 }
 
+.col-divider-handle {
+  cursor: col-resize;
+  transition: opacity 0.15s ease;
+}
+
+.col-divider-handle:hover line {
+  stroke: var(--primary, #2563eb) !important;
+  stroke-width: 2.5px !important;
+}
+
+.col-divider-handle:hover rect {
+  opacity: 0.9 !important;
+  fill: var(--primary, #2563eb) !important;
+}
+
 .task-card-actions {
   display: flex;
   align-items: center;
