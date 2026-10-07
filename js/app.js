@@ -22,6 +22,7 @@ class App {
       onTaskChange: (item) => this.handleTaskChanged(item),
       onTaskSelect: (id) => this.openEditModal(id),
       onTitleClick: () => this.openTitleModal(),
+      onTaskReorder: (sourceId, targetId, insertAfter) => this.reorderTask(sourceId, targetId, insertAfter),
       onDragStart: () => {
         this.preDragState = JSON.stringify(this.state);
       },
@@ -39,6 +40,7 @@ class App {
       }
     });
 
+    this.draggedCardId = null;
     this.currentEditingId = null;
     this.currentEditingWpId = null;
     this.activeFilterWp = 'all';
@@ -99,6 +101,68 @@ class App {
       redoBtn.style.opacity = (this.redoStack.length === 0) ? '0.35' : '1';
       redoBtn.style.cursor = (this.redoStack.length === 0) ? 'default' : 'pointer';
     }
+  }
+
+  reorderTask(sourceId, targetId, insertAfter = false) {
+    if (!sourceId || !targetId || sourceId === targetId) return;
+
+    const sourceIdx = this.state.items.findIndex(i => i.id === sourceId);
+    if (sourceIdx === -1) return;
+
+    const targetIdx = this.state.items.findIndex(i => i.id === targetId);
+    if (targetIdx === -1) return;
+
+    this.pushHistory();
+
+    const [sourceItem] = this.state.items.splice(sourceIdx, 1);
+
+    // Update work package if target belongs to a different WP
+    const targetItem = this.state.items.find(i => i.id === targetId);
+    if (targetItem && sourceItem.wpId !== targetItem.wpId) {
+      sourceItem.wpId = targetItem.wpId;
+    }
+
+    let newTargetIdx = this.state.items.findIndex(i => i.id === targetId);
+    if (newTargetIdx === -1) {
+      this.state.items.push(sourceItem);
+    } else {
+      if (insertAfter) {
+        newTargetIdx += 1;
+      }
+      this.state.items.splice(newTargetIdx, 0, sourceItem);
+    }
+
+    this.saveAndRender();
+  }
+
+  moveTask(itemId, direction) {
+    const filtered = this.state.items.filter(item => {
+      if (this.activeFilterWp !== 'all' && item.wpId !== this.activeFilterWp) return false;
+      if (this.searchQuery) {
+        const str = `${item.code} ${item.title} ${item.lead} ${item.notes}`.toLowerCase();
+        if (!str.includes(this.searchQuery)) return false;
+      }
+      return true;
+    });
+
+    const currentIdx = filtered.findIndex(i => i.id === itemId);
+    if (currentIdx === -1) return;
+
+    if (direction < 0 && currentIdx > 0) {
+      const prevItem = filtered[currentIdx - 1];
+      this.reorderTask(itemId, prevItem.id, false);
+    } else if (direction > 0 && currentIdx < filtered.length - 1) {
+      const nextItem = filtered[currentIdx + 1];
+      this.reorderTask(itemId, nextItem.id, true);
+    }
+  }
+
+  moveTaskUp(itemId) {
+    this.moveTask(itemId, -1);
+  }
+
+  moveTaskDown(itemId) {
+    this.moveTask(itemId, 1);
   }
 
   initDOM() {
@@ -634,7 +698,7 @@ class App {
     }
 
     let html = '';
-    filtered.forEach(item => {
+    filtered.forEach((item, idx) => {
       const wp = wpMap.get(item.wpId);
       const isMilestone = item.type === 'milestone';
       const isDeliverable = item.type === 'deliverable';
@@ -642,13 +706,31 @@ class App {
       const badgeLabel = item.code || (isMilestone ? 'MS' : (isDeliverable ? 'DEL' : 'Task'));
 
       html += `
-        <div class="task-card ${this.currentEditingId === item.id ? 'active' : ''}" data-id="${item.id}" onclick="window.ganttApp.openEditModal('${item.id}')">
+        <div class="task-card ${this.currentEditingId === item.id ? 'active' : ''}" 
+             data-id="${item.id}" 
+             draggable="true">
           <div class="task-card-header">
             <div class="task-badges">
+              <span class="drag-handle-badge" title="Drag up or down to reorder" draggable="false">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                  <circle cx="9" cy="6" r="2"/>
+                  <circle cx="15" cy="6" r="2"/>
+                  <circle cx="9" cy="12" r="2"/>
+                  <circle cx="15" cy="12" r="2"/>
+                  <circle cx="9" cy="18" r="2"/>
+                  <circle cx="15" cy="18" r="2"/>
+                </svg>
+              </span>
               <span class="badge ${badgeClass}">${this.escapeHTML(badgeLabel)}</span>
               ${wp ? `<span style="font-size: 11px; font-weight: 600; color: ${wp.color};">${this.escapeHTML(wp.code)}</span>` : ''}
             </div>
             <div class="task-card-actions" onclick="event.stopPropagation();">
+              <button class="btn btn-sm btn-icon btn-reorder" title="Move Up" ${idx === 0 ? 'disabled style="opacity:0.3;cursor:default;"' : ''} onclick="window.ganttApp.moveTask('${item.id}', -1)">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"></polyline></svg>
+              </button>
+              <button class="btn btn-sm btn-icon btn-reorder" title="Move Down" ${idx === filtered.length - 1 ? 'disabled style="opacity:0.3;cursor:default;"' : ''} onclick="window.ganttApp.moveTask('${item.id}', 1)">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </button>
               <button class="btn btn-sm btn-icon" title="Edit" onclick="window.ganttApp.openEditModal('${item.id}')">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
               </button>
@@ -670,6 +752,92 @@ class App {
     });
 
     container.innerHTML = html;
+    this.bindTaskListDragEvents(container, filtered);
+  }
+
+  bindTaskListDragEvents(container, filtered) {
+    const cards = container.querySelectorAll('.task-card');
+
+    cards.forEach(card => {
+      const itemId = card.getAttribute('data-id');
+
+      card.addEventListener('click', (e) => {
+        if (e.target.closest('.task-card-actions') || e.target.closest('.drag-handle-badge')) return;
+        this.openEditModal(itemId);
+      });
+
+      card.addEventListener('dragstart', (e) => {
+        this.draggedCardId = itemId;
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', itemId);
+        setTimeout(() => {
+          card.classList.add('dragging');
+        }, 0);
+      });
+
+      card.addEventListener('dragend', () => {
+        card.classList.remove('dragging');
+        cards.forEach(c => c.classList.remove('drag-over-top', 'drag-over-bottom'));
+        this.draggedCardId = null;
+      });
+
+      card.addEventListener('dragover', (e) => {
+        if (!this.draggedCardId || this.draggedCardId === itemId) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+
+        const rect = card.getBoundingClientRect();
+        const midY = rect.top + rect.height / 2;
+        const isBottom = e.clientY > midY;
+
+        if (isBottom) {
+          card.classList.remove('drag-over-top');
+          card.classList.add('drag-over-bottom');
+        } else {
+          card.classList.remove('drag-over-bottom');
+          card.classList.add('drag-over-top');
+        }
+      });
+
+      card.addEventListener('dragleave', (e) => {
+        if (!card.contains(e.relatedTarget)) {
+          card.classList.remove('drag-over-top', 'drag-over-bottom');
+        }
+      });
+
+      card.addEventListener('drop', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        card.classList.remove('drag-over-top', 'drag-over-bottom');
+
+        const sourceId = this.draggedCardId || e.dataTransfer.getData('text/plain');
+        if (!sourceId || sourceId === itemId) return;
+
+        const rect = card.getBoundingClientRect();
+        const midY = rect.top + rect.height / 2;
+        const insertAfter = e.clientY > midY;
+
+        this.reorderTask(sourceId, itemId, insertAfter);
+      });
+    });
+
+    container.addEventListener('dragover', (e) => {
+      if (!this.draggedCardId) return;
+      if (e.target === container) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+      }
+    });
+
+    container.addEventListener('drop', (e) => {
+      if (e.target === container && this.draggedCardId && filtered.length > 0) {
+        e.preventDefault();
+        const lastItem = filtered[filtered.length - 1];
+        if (lastItem && lastItem.id !== this.draggedCardId) {
+          this.reorderTask(this.draggedCardId, lastItem.id, true);
+        }
+      }
+    });
   }
 
   renderToolbarStats() {

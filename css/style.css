@@ -393,9 +393,83 @@ body {
   color: #6d28d9;
 }
 
+.task-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  transition: transform 0.1s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  cursor: pointer;
+  position: relative;
+  user-select: none;
+}
+
+.task-card.dragging {
+  opacity: 0.45;
+  border: 2px dashed var(--primary);
+  background: var(--primary-light);
+}
+
+.task-card.drag-over-top {
+  border-top: 3px solid var(--primary) !important;
+  transform: translateY(2px) !important;
+}
+
+.task-card.drag-over-bottom {
+  border-bottom: 3px solid var(--primary) !important;
+  transform: translateY(-2px) !important;
+}
+
+.drag-handle-badge {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-subtle);
+  cursor: grab;
+  padding: 1px 2px;
+  border-radius: 3px;
+  transition: color 0.15s ease;
+}
+
+.drag-handle-badge:hover {
+  color: var(--primary);
+  background: var(--bg-subtle);
+}
+
+.drag-handle-badge:active {
+  cursor: grabbing;
+}
+
+.svg-row-drag-handle {
+  cursor: grab;
+}
+
+.svg-row-drag-handle:active {
+  cursor: grabbing;
+}
+
+.svg-row-drag-handle:hover circle {
+  fill: var(--primary, #2563eb) !important;
+  opacity: 0.95 !important;
+}
+
 .task-card-actions {
   display: flex;
-  gap: 4px;
+  align-items: center;
+  gap: 2px;
+}
+
+.btn-reorder {
+  padding: 3px;
+  width: 22px;
+  height: 22px;
+  color: var(--text-muted);
+  border: none;
+  background: transparent;
+}
+
+.btn-reorder:hover {
+  color: var(--primary);
+  background: var(--bg-subtle);
 }
 
 .task-card-title {

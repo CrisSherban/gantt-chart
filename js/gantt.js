@@ -9,6 +9,7 @@ export class GanttChart {
     this.onTaskChange = options.onTaskChange || (() => {});
     this.onTaskSelect = options.onTaskSelect || (() => {});
     this.onTitleClick = options.onTitleClick || (() => {});
+    this.onTaskReorder = options.onTaskReorder || (() => {});
     this.onDragStart = options.onDragStart || (() => {});
     this.onDragEnd = options.onDragEnd || (() => {});
     this.tooltipEl = null;
@@ -86,6 +87,11 @@ export class GanttChart {
         });
       }
     });
+
+    this.visibleRows = visibleRows;
+    this.rowHeight = rowHeight;
+    this.headerHeight = headerHeight;
+    this.titleBannerHeight = titleBannerHeight;
 
     const totalRowsHeight = visibleRows.length * rowHeight;
     const legendHeight = 44;
@@ -246,6 +252,18 @@ export class GanttChart {
             <!-- Row background -->
             <rect x="0" y="${y}" width="${totalWidth}" height="${rowHeight}" fill="${isEven ? themeStyles.rowBgEven : themeStyles.rowBgOdd}" stroke="${themeStyles.gridBorder}" stroke-width="0.5"/>
             
+            <!-- Row drag-reorder handle -->
+            <g class="svg-row-drag-handle" data-id="${item.id}" style="cursor: grab;">
+              <title>Drag up or down to reorder task</title>
+              <rect x="0" y="${y}" width="15" height="${rowHeight}" fill="transparent"/>
+              <circle cx="5" cy="${rowCenterY - 5}" r="1.3" fill="${themeStyles.metaText}" opacity="0.4"/>
+              <circle cx="9" cy="${rowCenterY - 5}" r="1.3" fill="${themeStyles.metaText}" opacity="0.4"/>
+              <circle cx="5" cy="${rowCenterY}" r="1.3" fill="${themeStyles.metaText}" opacity="0.4"/>
+              <circle cx="9" cy="${rowCenterY}" r="1.3" fill="${themeStyles.metaText}" opacity="0.4"/>
+              <circle cx="5" cy="${rowCenterY + 5}" r="1.3" fill="${themeStyles.metaText}" opacity="0.4"/>
+              <circle cx="9" cy="${rowCenterY + 5}" r="1.3" fill="${themeStyles.metaText}" opacity="0.4"/>
+            </g>
+
             <!-- Left Column Content -->
             <!-- Type badge / code -->
             <rect x="16" y="${y + (rowHeight - 18) / 2}" width="${badgeWidth}" height="18" rx="3" fill="${isMilestone ? '#fef3c7' : (isDeliverable ? '#ede9fe' : themeStyles.codeBadgeBg)}" stroke="${isMilestone ? '#f59e0b' : (isDeliverable ? '#8b5cf6' : themeStyles.codeBadgeBorder)}" stroke-width="0.75"/>
@@ -341,6 +359,11 @@ export class GanttChart {
         svgParts.push(`</g>`);
       }
     });
+
+    // Drop insertion indicator line across chart rows
+    svgParts.push(`
+      <line id="svg-row-drop-indicator" x1="0" x2="${totalWidth}" y1="0" y2="0" stroke="#2563eb" stroke-width="2.5" stroke-dasharray="5,3" style="display: none; pointer-events: none;"/>
+    `);
 
     svgParts.push(`</g>`); // End rows group
 
@@ -576,20 +599,32 @@ export class GanttChart {
       });
     });
 
-    // Drag-to-move and Drag-to-resize handlers
+    // Drag-to-move, Drag-to-resize, and Drag-to-reorder handlers
     let isDragging = false;
-    let dragType = null; // 'move' | 'resize-right'
+    let dragType = null; // 'move' | 'resize-right' | 'row-reorder'
     let currentItemId = null;
     let initialMouseX = 0;
+    let initialMouseY = 0;
     let origStartMonth = 1;
     let origEndMonth = 1;
+    let pendingRowTarget = null;
 
     const onMouseDown = (e) => {
+      const rowDragHandle = e.target.closest('.svg-row-drag-handle');
       const resizeHandle = e.target.closest('.resize-right');
       const taskBar = e.target.closest('.gantt-task-bar');
       const marker = e.target.closest('.gantt-milestone-marker, .gantt-deliverable-marker');
 
-      if (resizeHandle) {
+      if (rowDragHandle) {
+        e.preventDefault();
+        e.stopPropagation();
+        currentItemId = rowDragHandle.getAttribute('data-id');
+        isDragging = true;
+        this.hasMoved = false;
+        dragType = 'row-reorder';
+        initialMouseY = e.clientY;
+        pendingRowTarget = null;
+      } else if (resizeHandle) {
         e.preventDefault();
         e.stopPropagation();
         const parentBar = resizeHandle.closest('.gantt-task-bar');
@@ -622,6 +657,47 @@ export class GanttChart {
 
     const onMouseMove = (e) => {
       if (!isDragging || !currentItemId) return;
+
+      if (dragType === 'row-reorder') {
+        const deltaY = Math.abs(e.clientY - initialMouseY);
+        if (deltaY > 3) {
+          this.hasMoved = true;
+        }
+
+        const dropLine = svg.querySelector('#svg-row-drop-indicator');
+        if (!dropLine) return;
+
+        // Map mouse position to SVG coordinate space
+        const ctm = svg.getScreenCTM();
+        if (!ctm) return;
+        const pt = svg.createSVGPoint();
+        pt.x = e.clientX;
+        pt.y = e.clientY;
+        const svgPt = pt.matrixTransform(ctm.inverse());
+
+        const rowAreaY = svgPt.y - (this.titleBannerHeight || 68) - (this.headerHeight || 70);
+        const rowH = this.rowHeight || 38;
+        const totalRows = (this.visibleRows || []).length;
+        if (totalRows === 0) return;
+
+        const targetIdx = Math.max(0, Math.min(totalRows - 1, Math.floor(rowAreaY / rowH)));
+        const targetRow = this.visibleRows[targetIdx];
+        if (!targetRow) return;
+
+        const rowTopY = targetIdx * rowH;
+        const isAfter = (rowAreaY - rowTopY) > (rowH / 2);
+        const lineY = rowTopY + (isAfter ? rowH : 0);
+
+        dropLine.setAttribute('y1', lineY);
+        dropLine.setAttribute('y2', lineY);
+        dropLine.style.display = 'block';
+
+        pendingRowTarget = {
+          targetRow,
+          isAfter
+        };
+        return;
+      }
 
       const deltaX = e.clientX - initialMouseX;
       if (Math.abs(deltaX) > 4) {
@@ -664,12 +740,29 @@ export class GanttChart {
 
     const onMouseUp = () => {
       if (isDragging) {
-        if (this.hasMoved) {
+        const dropLine = svg.querySelector('#svg-row-drop-indicator');
+        if (dropLine) dropLine.style.display = 'none';
+
+        if (dragType === 'row-reorder') {
+          if (this.hasMoved && pendingRowTarget && currentItemId) {
+            const { targetRow, isAfter } = pendingRowTarget;
+            if (targetRow.item && targetRow.item.id !== currentItemId) {
+              this.onTaskReorder(currentItemId, targetRow.item.id, isAfter);
+            } else if (targetRow.isWp) {
+              const wpItems = this.data.items.filter(it => it.wpId === targetRow.wp.id);
+              if (wpItems.length > 0 && wpItems[0].id !== currentItemId) {
+                this.onTaskReorder(currentItemId, wpItems[0].id, false);
+              }
+            }
+          }
+        } else if (this.hasMoved) {
           this.onDragEnd();
         }
+
         isDragging = false;
         dragType = null;
         currentItemId = null;
+        pendingRowTarget = null;
         setTimeout(() => { this.hasMoved = false; }, 80);
       }
     };
