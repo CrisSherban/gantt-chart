@@ -285,14 +285,34 @@ class App {
     document.getElementById('btn-add-deliverable')?.addEventListener('click', () => this.openCreateModal('deliverable'));
     document.getElementById('btn-add-wp')?.addEventListener('click', () => this.openWpModal());
 
-    // Zoom buttons
+    // Zoom and Horizontal Stretch buttons
     document.getElementById('btn-zoom-in')?.addEventListener('click', () => {
-      this.state.meta.monthWidth = Math.min(100, (this.state.meta.monthWidth || 44) + 6);
+      this.pushHistory();
+      this.state.meta.monthWidth = Math.min(180, (this.state.meta.monthWidth || 44) + 6);
       this.saveAndRender();
     });
     document.getElementById('btn-zoom-out')?.addEventListener('click', () => {
+      this.pushHistory();
       this.state.meta.monthWidth = Math.max(26, (this.state.meta.monthWidth || 44) - 6);
       this.saveAndRender();
+    });
+
+    const toolbarSlider = document.getElementById('toolbar-stretch-slider');
+    toolbarSlider?.addEventListener('input', (e) => {
+      const val = parseInt(e.target.value, 10);
+      this.state.meta.monthWidth = val;
+      this.syncStretchDisplays(val);
+      this.gantt.render(this.state);
+      saveState(this.state);
+    });
+    toolbarSlider?.addEventListener('change', () => {
+      this.pushHistory();
+      saveState(this.state);
+    });
+
+    document.getElementById('btn-stretch-landscape')?.addEventListener('click', () => {
+      this.pushHistory();
+      this.autoStretchLandscape();
     });
 
     // Exports
@@ -452,6 +472,67 @@ class App {
       this.state.meta.showProgress = e.target.checked;
       this.saveAndRender();
     });
+
+    // Horizontal Stretch Settings Slider
+    const settingsSlider = document.getElementById('input-settings-stretch');
+    settingsSlider?.addEventListener('input', (e) => {
+      const val = parseInt(e.target.value, 10);
+      this.state.meta.monthWidth = val;
+      this.syncStretchDisplays(val);
+      this.gantt.render(this.state);
+      saveState(this.state);
+    });
+    settingsSlider?.addEventListener('change', () => {
+      this.pushHistory();
+      saveState(this.state);
+    });
+
+    // Preset stretch buttons
+    document.querySelectorAll('.btn-stretch-preset').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const width = parseInt(btn.getAttribute('data-width'), 10);
+        if (width) {
+          this.pushHistory();
+          this.state.meta.monthWidth = width;
+          this.saveAndRender();
+        }
+      });
+    });
+
+    document.getElementById('btn-settings-auto-landscape')?.addEventListener('click', () => {
+      this.pushHistory();
+      this.autoStretchLandscape();
+    });
+
+    // Row density / vertical height
+    document.getElementById('select-row-height')?.addEventListener('change', (e) => {
+      this.pushHistory();
+      this.state.meta.rowHeight = parseInt(e.target.value, 10) || 38;
+      this.saveAndRender();
+    });
+
+    // Compact Left Column toggle
+    document.getElementById('toggle-compact-left-col')?.addEventListener('change', (e) => {
+      this.pushHistory();
+      this.state.meta.compactView = e.target.checked;
+      this.saveAndRender();
+    });
+
+    // Ctrl/Cmd/Alt + Wheel zoom for horizontal stretch
+    this.scrollViewport?.addEventListener('wheel', (e) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) {
+        e.preventDefault();
+        const delta = e.deltaY < 0 ? 4 : -4;
+        const current = this.state.meta.monthWidth || 44;
+        const nextVal = Math.max(26, Math.min(180, current + delta));
+        if (nextVal !== current) {
+          this.state.meta.monthWidth = nextVal;
+          this.syncStretchDisplays(nextVal);
+          this.gantt.render(this.state);
+          saveState(this.state);
+        }
+      }
+    }, { passive: false });
 
     // Modals
     this.bindModalEvents();
@@ -628,6 +709,46 @@ class App {
 
     const toggleProgress = document.getElementById('toggle-show-progress');
     if (toggleProgress) toggleProgress.checked = !!meta.showProgress;
+
+    // Sync Stretch Sliders and Row Height
+    this.syncStretchDisplays(meta.monthWidth || 44);
+
+    const rowHeightSelect = document.getElementById('select-row-height');
+    if (rowHeightSelect) rowHeightSelect.value = String(meta.rowHeight || 38);
+
+    const toggleCompactCol = document.getElementById('toggle-compact-left-col');
+    if (toggleCompactCol) toggleCompactCol.checked = !!meta.compactView;
+  }
+
+  syncStretchDisplays(val) {
+    const width = val || 44;
+    const toolbarSlider = document.getElementById('toolbar-stretch-slider');
+    const toolbarVal = document.getElementById('toolbar-stretch-val');
+    const settingsSlider = document.getElementById('input-settings-stretch');
+    const settingsVal = document.getElementById('label-settings-stretch-val');
+
+    if (toolbarSlider && parseInt(toolbarSlider.value, 10) !== width) toolbarSlider.value = width;
+    if (toolbarVal) toolbarVal.textContent = `${width}px`;
+    if (settingsSlider && parseInt(settingsSlider.value, 10) !== width) settingsSlider.value = width;
+    if (settingsVal) settingsVal.textContent = `${width}px`;
+  }
+
+  autoStretchLandscape() {
+    const meta = this.state.meta;
+    const leftColWidth = meta.compactView ? 260 : 350;
+    const totalMonths = Math.max(1, meta.totalMonths || 36);
+    const rowHeight = meta.rowHeight || 38;
+    const visibleRowsCount = this.state.workPackages.length + this.state.items.length;
+    const totalHeight = 68 + 70 + (visibleRowsCount * rowHeight) + 44 + 20;
+
+    // Target widescreen 16:9 landscape aspect ratio (ratio = 16 / 9 ≈ 1.778)
+    const targetTotalWidth = Math.round(totalHeight * (16 / 9));
+    const targetTimelineWidth = Math.max(120, targetTotalWidth - leftColWidth - 24);
+    const calculatedMonthWidth = Math.round(targetTimelineWidth / totalMonths);
+
+    // Clamp between comfortable bounds (32px min, 180px max)
+    this.state.meta.monthWidth = Math.max(32, Math.min(180, calculatedMonthWidth));
+    this.saveAndRender();
   }
 
   renderWorkPackages() {
