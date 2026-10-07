@@ -44,12 +44,15 @@ export class GanttChart {
     this.data = data;
     const { meta, workPackages, items } = data;
 
+    const fontScale = Number(meta.fontScale) || 1.0;
+    const fs = (base) => (base * fontScale).toFixed(1);
+
     const leftColWidth = meta.leftColWidth || (meta.compactView ? 260 : 350);
     const monthWidth = meta.monthWidth || 44;
     const totalMonths = Math.max(1, meta.totalMonths || 36);
     const rowHeight = meta.rowHeight || 38;
     const headerHeight = 70;
-    const titleBannerHeight = 68;
+    const titleBannerHeight = Math.round(68 * Math.max(1, fontScale * 0.92));
     const chartTimelineWidth = totalMonths * monthWidth;
     const totalWidth = leftColWidth + chartTimelineWidth + 24;
 
@@ -95,9 +98,10 @@ export class GanttChart {
     this.headerHeight = headerHeight;
     this.titleBannerHeight = titleBannerHeight;
     this.leftColWidth = leftColWidth;
+    this.fontScale = fontScale;
 
     const totalRowsHeight = visibleRows.length * rowHeight;
-    const legendHeight = 44;
+    const legendHeight = Math.round(44 * Math.max(1, fontScale * 0.92));
     const totalHeight = titleBannerHeight + headerHeight + totalRowsHeight + legendHeight + 20;
 
     // Theme palette
@@ -140,23 +144,26 @@ export class GanttChart {
     // Interactive Title Banner
     const projectTitle = meta.title || 'Click to set project title';
     const projectSubtitle = meta.subtitle || 'Click to add grant agreement # or subtitle';
+    const titleY = Math.round(18 + (titleBannerHeight - 68) * 0.2);
+    const subtitleY = Math.round(40 + (titleBannerHeight - 68) * 0.7);
+    const pencilY = Math.round(8 + (titleBannerHeight - 68) * 0.2);
 
     svgParts.push(`
       <g class="gantt-title-banner" transform="translate(16, 14)">
         <g class="gantt-title-interactive" id="gantt-title-trigger" title="Click to edit project title and details">
-          <text id="gantt-svg-title" class="title-main" x="4" y="18" dominant-baseline="central" font-size="19" font-weight="700" fill="${themeStyles.titleText}">${this.escapeXML(projectTitle)}</text>
+          <text id="gantt-svg-title" class="title-main" x="4" y="${titleY}" dominant-baseline="central" font-size="${fs(19)}" font-weight="700" fill="${themeStyles.titleText}">${this.escapeXML(projectTitle)}</text>
           
           <!-- Pencil icon indicating editability -->
-          <g class="edit-pencil-icon" transform="translate(${Math.min(totalWidth - 280, 520)}, 8)" opacity="0.65">
-            <rect x="0" y="0" width="84" height="20" rx="4" fill="${themeStyles.codeBadgeBg}" stroke="${themeStyles.codeBadgeBorder}" stroke-width="0.75"/>
+          <g class="edit-pencil-icon" transform="translate(${Math.min(totalWidth - 280, 520)}, ${pencilY})" opacity="0.65">
+            <rect x="0" y="0" width="${Math.round(84 * Math.max(1, fontScale * 0.95))}" height="20" rx="4" fill="${themeStyles.codeBadgeBg}" stroke="${themeStyles.codeBadgeBorder}" stroke-width="0.75"/>
             <path d="M7 14 L13 14 M9 7 L12 4 L14 6 L11 9 Z" fill="none" stroke="${themeStyles.metaText}" stroke-width="1.2"/>
-            <text x="22" y="10" dominant-baseline="central" font-size="10.5" font-weight="600" fill="${themeStyles.metaText}">Edit Title</text>
+            <text x="22" y="10" dominant-baseline="central" font-size="${fs(10.5)}" font-weight="600" fill="${themeStyles.metaText}">Edit Title</text>
           </g>
 
-          <text id="gantt-svg-subtitle" x="4" y="40" dominant-baseline="central" font-size="12" font-weight="500" fill="${themeStyles.subtitleText}">${this.escapeXML(projectSubtitle)}</text>
+          <text id="gantt-svg-subtitle" x="4" y="${subtitleY}" dominant-baseline="central" font-size="${fs(12)}" font-weight="500" fill="${themeStyles.subtitleText}">${this.escapeXML(projectSubtitle)}</text>
         </g>
         
-        <text x="${totalWidth - 36}" y="18" text-anchor="end" dominant-baseline="central" font-size="11.5" font-weight="500" fill="${themeStyles.metaText}">Duration: ${totalMonths} Months | ${items.length} Project Items</text>
+        <text x="${totalWidth - 36}" y="${titleY}" text-anchor="end" dominant-baseline="central" font-size="${fs(11.5)}" font-weight="500" fill="${themeStyles.metaText}">Duration: ${totalMonths} Months | ${items.length} Project Items</text>
       </g>
     `);
 
@@ -169,11 +176,11 @@ export class GanttChart {
     svgParts.push(`
       <rect x="0" y="0" width="${totalWidth}" height="${headerHeight}" fill="${themeStyles.headerBg}" stroke="${themeStyles.gridBorder}" stroke-width="1"/>
       <rect x="0" y="0" width="${leftColWidth}" height="${headerHeight}" fill="${themeStyles.headerLeftBg}" stroke="${themeStyles.gridBorder}" stroke-width="1"/>
-      <text x="16" y="${headerHeight / 2}" dominant-baseline="central" font-size="13" font-weight="700" fill="${themeStyles.titleText}">Work Package / Tasks & Milestones</text>
+      <text x="16" y="${headerHeight / 2}" dominant-baseline="central" font-size="${fs(13)}" font-weight="700" fill="${themeStyles.titleText}">Work Package / Tasks & Milestones</text>
     `);
 
     // Header Timeline Months & Years
-    const headerCols = this.generateTimeHeaders(meta, totalMonths, monthWidth, leftColWidth, themeStyles);
+    const headerCols = this.generateTimeHeaders(meta, totalMonths, monthWidth, leftColWidth, themeStyles, fs);
     svgParts.push(headerCols);
 
     // Chart Rows Background & Grid lines
@@ -230,10 +237,10 @@ export class GanttChart {
             ${chevron}
 
             <!-- WP Left label -->
-            <text x="26" y="${rowCenterY}" dominant-baseline="central" font-size="12.5" font-weight="700" fill="${themeStyles.titleText}">
-              <tspan fill="${row.wp.color}" font-weight="800">${this.escapeXML(row.wp.code)}:</tspan> ${this.escapeXML(this.truncate(row.wp.name, Math.max(24, Math.floor((leftColWidth - 130) / 7.2))))}
+            <text x="26" y="${rowCenterY}" dominant-baseline="central" font-size="${fs(12.5)}" font-weight="700" fill="${themeStyles.titleText}">
+              <tspan fill="${row.wp.color}" font-weight="800">${this.escapeXML(row.wp.code)}:</tspan> ${this.escapeXML(this.truncate(row.wp.name, Math.max(16, Math.floor((leftColWidth - 130) / (7.2 * fontScale)))))}
             </text>
-            <text x="${leftColWidth - 14}" y="${rowCenterY}" text-anchor="end" dominant-baseline="central" font-size="10" fill="${themeStyles.metaText}">
+            <text x="${leftColWidth - 14}" y="${rowCenterY}" text-anchor="end" dominant-baseline="central" font-size="${fs(10)}" fill="${themeStyles.metaText}">
               ${row.itemCount} items ${row.wp.collapsed ? '(click to expand)' : ''}
             </text>
 
@@ -248,12 +255,13 @@ export class GanttChart {
         const item = row.item;
         const isMilestone = item.type === 'milestone';
         const isDeliverable = item.type === 'deliverable';
-        const badgeWidth = isMilestone ? 32 : (isDeliverable ? 36 : 40);
+        const badgeWidth = Math.round((isMilestone ? 32 : (isDeliverable ? 36 : 40)) * Math.max(1, fontScale * 0.95));
 
-        // Dynamically calculate title truncation limit based on expanded column width
-        const leadWidth = item.lead ? (item.lead.length + 3) * 6 : 0;
-        const titleAvailWidth = Math.max(120, leftColWidth - (24 + badgeWidth) - 75 - leadWidth);
-        const maxTitleChars = Math.max(20, Math.floor(titleAvailWidth / 6.2));
+        // Dynamically calculate title truncation limit based on expanded column width and font scale
+        const leadCharW = 6.0 * fontScale;
+        const leadWidth = item.lead ? (item.lead.length + 3) * leadCharW : 0;
+        const titleAvailWidth = Math.max(90, leftColWidth - (24 + badgeWidth) - (75 * fontScale) - leadWidth);
+        const maxTitleChars = Math.max(14, Math.floor(titleAvailWidth / (6.2 * fontScale)));
 
         svgParts.push(`
           <g class="gantt-item-row" data-id="${item.id}" data-wpid="${row.wp.id}">
@@ -275,18 +283,18 @@ export class GanttChart {
             <!-- Left Column Content -->
             <!-- Type badge / code -->
             <rect x="16" y="${y + (rowHeight - 18) / 2}" width="${badgeWidth}" height="18" rx="3" fill="${isMilestone ? '#fef3c7' : (isDeliverable ? '#ede9fe' : themeStyles.codeBadgeBg)}" stroke="${isMilestone ? '#f59e0b' : (isDeliverable ? '#8b5cf6' : themeStyles.codeBadgeBorder)}" stroke-width="0.75"/>
-            <text x="${16 + badgeWidth / 2}" y="${rowCenterY}" text-anchor="middle" dominant-baseline="central" font-size="9.5" font-weight="700" fill="${isMilestone ? '#b45309' : (isDeliverable ? '#6d28d9' : row.wp.color)}">
+            <text x="${16 + badgeWidth / 2}" y="${rowCenterY}" text-anchor="middle" dominant-baseline="central" font-size="${fs(9.5)}" font-weight="700" fill="${isMilestone ? '#b45309' : (isDeliverable ? '#6d28d9' : row.wp.color)}">
               ${this.escapeXML(item.code || (isMilestone ? 'MS' : (isDeliverable ? 'DEL' : 'TSK')))}
             </text>
 
             <!-- Title & Lead -->
-            <text x="${24 + badgeWidth}" y="${rowCenterY}" dominant-baseline="central" font-size="11.5" font-weight="500" fill="${themeStyles.bodyText}" class="item-title-text">
+            <text x="${24 + badgeWidth}" y="${rowCenterY}" dominant-baseline="central" font-size="${fs(11.5)}" font-weight="500" fill="${themeStyles.bodyText}" class="item-title-text">
               ${this.escapeXML(this.truncate(item.title, maxTitleChars))}
-              ${item.lead ? `<tspan fill="${themeStyles.metaText}" font-size="10"> (${this.escapeXML(item.lead)})</tspan>` : ''}
+              ${item.lead ? `<tspan fill="${themeStyles.metaText}" font-size="${fs(10)}"> (${this.escapeXML(item.lead)})</tspan>` : ''}
             </text>
 
             <!-- Duration badge on right of left column -->
-            <text x="${leftColWidth - 14}" y="${rowCenterY}" text-anchor="end" dominant-baseline="central" font-size="10" font-family="monospace" fill="${themeStyles.metaText}">
+            <text x="${leftColWidth - 14}" y="${rowCenterY}" text-anchor="end" dominant-baseline="central" font-size="${fs(10)}" font-family="monospace" fill="${themeStyles.metaText}">
               M${item.startMonth}${item.endMonth !== item.startMonth ? `–M${item.endMonth}` : ''}
             </text>
         `);
@@ -313,7 +321,7 @@ export class GanttChart {
           svgParts.push(`
             <g class="gantt-deliverable-marker interactive-node" data-id="${item.id}" transform="translate(${cx}, ${cy})" style="cursor: pointer;">
               <polygon points="${-r},${-r * 0.58} 0,${-r * 1.15} ${r},${-r * 0.58} ${r},${r * 0.58} 0,${r * 1.15} ${-r},${r * 0.58}" fill="#8b5cf6" stroke="#6d28d9" stroke-width="1.5" filter="url(#subtle-shadow)"/>
-              <text x="0" y="0" text-anchor="middle" dominant-baseline="central" font-size="8.5" font-weight="800" fill="#ffffff">D</text>
+              <text x="0" y="0" text-anchor="middle" dominant-baseline="central" font-size="${fs(8.5)}" font-weight="800" fill="#ffffff">D</text>
             </g>
           `);
         } else {
@@ -347,13 +355,13 @@ export class GanttChart {
               <rect x="${barX}" y="${barY}" width="${barW}" height="${barH}" rx="5" fill="url(#bar-shine)" pointer-events="none"/>
 
               <!-- Bar Label -->
-              ${barW >= 60 ? `
-                <text x="${barX + 8}" y="${barCenterY}" dominant-baseline="central" font-size="10.5" font-weight="600" fill="#ffffff" pointer-events="none">
-                  ${this.escapeXML(this.truncate(item.code || item.title, Math.floor(barW / 7.5)))}
-                  ${meta.showProgress && progress > 0 && barW > 110 ? `<tspan fill="#e0f2fe" font-size="9.5"> (${progress}%)</tspan>` : ''}
+              ${barW >= (60 * fontScale) ? `
+                <text x="${barX + 8}" y="${barCenterY}" dominant-baseline="central" font-size="${fs(10.5)}" font-weight="600" fill="#ffffff" pointer-events="none">
+                  ${this.escapeXML(this.truncate(item.code || item.title, Math.floor(barW / (7.5 * fontScale))))}
+                  ${meta.showProgress && progress > 0 && barW > (110 * fontScale) ? `<tspan fill="#e0f2fe" font-size="${fs(9.5)}"> (${progress}%)</tspan>` : ''}
                 </text>
               ` : `
-                <text x="${barX + barW + 6}" y="${barCenterY}" dominant-baseline="central" font-size="10" font-weight="600" fill="${themeStyles.bodyText}" pointer-events="none">
+                <text x="${barX + barW + 6}" y="${barCenterY}" dominant-baseline="central" font-size="${fs(10)}" font-weight="600" fill="${themeStyles.bodyText}" pointer-events="none">
                   ${this.escapeXML(item.code || item.title)}
                 </text>
               `}
@@ -390,28 +398,35 @@ export class GanttChart {
 
     // Bottom Legend
     const legendY = headerHeight + totalRowsHeight + 14;
+    const legTaskW = Math.round(95 * fontScale);
+    const legMsX = Math.round(24 + legTaskW + 16);
+    const legMsW = Math.round(155 * fontScale);
+    const legDelivX = Math.round(legMsX + legMsW + 16);
+    const legDelivW = Math.round(135 * fontScale);
+    const legProgX = Math.round(legDelivX + legDelivW + 16);
+
     svgParts.push(`
       <g class="gantt-legend" transform="translate(16, ${legendY})">
-        <rect x="0" y="0" width="${totalWidth - 32}" height="32" rx="6" fill="${themeStyles.legendBg}" stroke="${themeStyles.gridBorder}" stroke-width="0.8"/>
+        <rect x="0" y="0" width="${totalWidth - 32}" height="${Math.round(32 * Math.max(1, fontScale * 0.92))}" rx="6" fill="${themeStyles.legendBg}" stroke="${themeStyles.gridBorder}" stroke-width="0.8"/>
         
-        <g transform="translate(12, 10)">
+        <g transform="translate(12, ${Math.round(10 * Math.max(1, fontScale * 0.92))})">
           <!-- Task legend -->
           <rect x="0" y="0" width="16" height="10" rx="2" fill="#2563eb"/>
-          <text x="22" y="6" dominant-baseline="central" font-size="11" font-weight="500" fill="${themeStyles.bodyText}">Research Task</text>
+          <text x="22" y="6" dominant-baseline="central" font-size="${fs(11)}" font-weight="500" fill="${themeStyles.bodyText}">Research Task</text>
 
           <!-- Milestone legend -->
-          <polygon points="120,5 125,0 130,5 125,10" fill="#f59e0b" stroke="#b45309" stroke-width="1"/>
-          <text x="136" y="6" dominant-baseline="central" font-size="11" font-weight="500" fill="${themeStyles.bodyText}">Milestone (Decision Point)</text>
+          <polygon points="${legMsX},5 ${legMsX + 5},0 ${legMsX + 10},5 ${legMsX + 5},10" fill="#f59e0b" stroke="#b45309" stroke-width="1"/>
+          <text x="${legMsX + 16}" y="6" dominant-baseline="central" font-size="${fs(11)}" font-weight="500" fill="${themeStyles.bodyText}">Milestone (Decision Point)</text>
 
           <!-- Deliverable legend -->
-          <polygon points="296,2 301,0 306,2 306,7 301,9 296,7" fill="#8b5cf6"/>
-          <text x="312" y="6" dominant-baseline="central" font-size="11" font-weight="500" fill="${themeStyles.bodyText}">Deliverable / Output</text>
+          <polygon points="${legDelivX},2 ${legDelivX + 5},0 ${legDelivX + 10},2 ${legDelivX + 10},7 ${legDelivX + 5},9 ${legDelivX},7" fill="#8b5cf6"/>
+          <text x="${legDelivX + 16}" y="6" dominant-baseline="central" font-size="${fs(11)}" font-weight="500" fill="${themeStyles.bodyText}">Deliverable / Output</text>
 
           ${meta.showProgress ? `
             <!-- Progress legend -->
-            <rect x="445" y="0" width="24" height="10" rx="2" fill="#2563eb"/>
-            <rect x="445" y="0" width="14" height="10" rx="2" fill="#1e3a8a"/>
-            <text x="475" y="6" dominant-baseline="central" font-size="11" font-weight="500" fill="${themeStyles.bodyText}">Progress Fill (%)</text>
+            <rect x="${legProgX}" y="0" width="24" height="10" rx="2" fill="#2563eb"/>
+            <rect x="${legProgX}" y="0" width="14" height="10" rx="2" fill="#1e3a8a"/>
+            <text x="${legProgX + 30}" y="6" dominant-baseline="central" font-size="${fs(11)}" font-weight="500" fill="${themeStyles.bodyText}">Progress Fill (%)</text>
           ` : ''}
         </g>
       </g>
@@ -426,8 +441,10 @@ export class GanttChart {
     this.attachEventListeners(leftColWidth, monthWidth, totalMonths);
   }
 
-  generateTimeHeaders(meta, totalMonths, monthWidth, leftColWidth, themeStyles) {
+  generateTimeHeaders(meta, totalMonths, monthWidth, leftColWidth, themeStyles, customFs = null) {
     const parts = [];
+    const fontScale = Number(meta.fontScale) || 1.0;
+    const fs = customFs || ((base) => (base * fontScale).toFixed(1));
     const timeMode = meta.timeMode || 'project_months';
     const startParts = this.parseDateParts(meta.startDate);
     const startYear = startParts.year;
@@ -472,7 +489,7 @@ export class GanttChart {
 
         parts.push(`
           <rect x="${x}" y="0" width="${w}" height="${y1Height}" fill="${bg}" stroke="${themeStyles.gridBorder}" stroke-width="0.8"/>
-          <text x="${x + w / 2}" y="${y1Height / 2}" text-anchor="middle" dominant-baseline="central" font-size="11.5" font-weight="700" fill="${themeStyles.titleText}">
+          <text x="${x + w / 2}" y="${y1Height / 2}" text-anchor="middle" dominant-baseline="central" font-size="${fs(11.5)}" font-weight="700" fill="${themeStyles.titleText}">
             ${grp.year}
           </text>
         `);
@@ -491,7 +508,7 @@ export class GanttChart {
 
         parts.push(`
           <rect x="${x}" y="${y1Height}" width="${monthWidth}" height="${y2Height}" fill="${themeStyles.monthHeaderBg}" stroke="${themeStyles.gridBorder}" stroke-width="0.6"/>
-          <text x="${x + monthWidth / 2}" y="${y1Height + y2Height / 2}" text-anchor="middle" dominant-baseline="central" font-size="10.5" font-weight="${(isQuarterEnd || isYearStart) ? '700' : '500'}" fill="${isYearStart ? themeStyles.titleText : (isQuarterEnd ? themeStyles.titleText : themeStyles.subtitleText)}">
+          <text x="${x + monthWidth / 2}" y="${y1Height + y2Height / 2}" text-anchor="middle" dominant-baseline="central" font-size="${fs(10.5)}" font-weight="${(isQuarterEnd || isYearStart) ? '700' : '500'}" fill="${isYearStart ? themeStyles.titleText : (isQuarterEnd ? themeStyles.titleText : themeStyles.subtitleText)}">
             ${mLabel}
           </text>
         `);
@@ -510,7 +527,7 @@ export class GanttChart {
 
         parts.push(`
           <rect x="${x}" y="0" width="${w}" height="${y1Height}" fill="${yr % 2 === 0 ? themeStyles.yearHeaderBgEven : themeStyles.yearHeaderBgOdd}" stroke="${themeStyles.gridBorder}" stroke-width="0.8"/>
-          <text x="${x + w / 2}" y="${y1Height / 2}" text-anchor="middle" dominant-baseline="central" font-size="11.5" font-weight="700" fill="${themeStyles.titleText}">
+          <text x="${x + w / 2}" y="${y1Height / 2}" text-anchor="middle" dominant-baseline="central" font-size="${fs(11.5)}" font-weight="700" fill="${themeStyles.titleText}">
             Year ${yr + 1} (Q${startQ}–Q${endQ})
           </text>
         `);
@@ -526,7 +543,7 @@ export class GanttChart {
 
         parts.push(`
           <rect x="${x}" y="${y1Height}" width="${monthWidth}" height="${y2Height}" fill="${themeStyles.monthHeaderBg}" stroke="${themeStyles.gridBorder}" stroke-width="0.6"/>
-          <text x="${x + monthWidth / 2}" y="${y1Height + y2Height / 2}" text-anchor="middle" dominant-baseline="central" font-size="10.5" font-weight="${isQuarterEnd ? '700' : '500'}" fill="${isQuarterEnd ? themeStyles.titleText : themeStyles.subtitleText}">
+          <text x="${x + monthWidth / 2}" y="${y1Height + y2Height / 2}" text-anchor="middle" dominant-baseline="central" font-size="${fs(10.5)}" font-weight="${isQuarterEnd ? '700' : '500'}" fill="${isQuarterEnd ? themeStyles.titleText : themeStyles.subtitleText}">
             ${mLabel}
           </text>
         `);
@@ -543,7 +560,7 @@ export class GanttChart {
 
         parts.push(`
           <rect x="${x}" y="0" width="${w}" height="${y1Height}" fill="${yr % 2 === 0 ? themeStyles.yearHeaderBgEven : themeStyles.yearHeaderBgOdd}" stroke="${themeStyles.gridBorder}" stroke-width="0.8"/>
-          <text x="${x + w / 2}" y="${y1Height / 2}" text-anchor="middle" dominant-baseline="central" font-size="11.5" font-weight="700" fill="${themeStyles.titleText}">
+          <text x="${x + w / 2}" y="${y1Height / 2}" text-anchor="middle" dominant-baseline="central" font-size="${fs(11.5)}" font-weight="700" fill="${themeStyles.titleText}">
             Project Year ${yr + 1} (Months ${startM}–${endM})
           </text>
         `);
@@ -557,7 +574,7 @@ export class GanttChart {
 
         parts.push(`
           <rect x="${x}" y="${y1Height}" width="${monthWidth}" height="${y2Height}" fill="${themeStyles.monthHeaderBg}" stroke="${themeStyles.gridBorder}" stroke-width="0.6"/>
-          <text x="${x + monthWidth / 2}" y="${y1Height + y2Height / 2}" text-anchor="middle" dominant-baseline="central" font-size="10.5" font-weight="${isQuarterEnd ? '700' : '500'}" fill="${isQuarterEnd ? themeStyles.titleText : themeStyles.subtitleText}">
+          <text x="${x + monthWidth / 2}" y="${y1Height + y2Height / 2}" text-anchor="middle" dominant-baseline="central" font-size="${fs(10.5)}" font-weight="${isQuarterEnd ? '700' : '500'}" fill="${isQuarterEnd ? themeStyles.titleText : themeStyles.subtitleText}">
             ${mLabel}
           </text>
         `);

@@ -36,12 +36,15 @@ Built with standard HTML5, CSS3, and ES6 JavaScript. **100% client-side**, zero 
 - **Print / System PDF**:
   - Custom `@media print` stylesheet formatted for crisp landscape printing.
 
-### 🖱️ Fluid Interactive Timeline
-- **Interactive Drag & Drop**: Click and drag any task bar along the timeline to reschedule start and end months.
-- **Right-Edge Duration Resizing**: Drag the right edge of any task bar to extend or shorten its duration.
+### 🖱️ Fluid Interactive Timeline & Layout Customization
+- **Overall Font Size Scaling**: Adjust chart text sizes with quick toolbar zoom buttons (`A−` / `100%` / `A+`), settings range slider (80%–150%), or one-click presets (`85%`, `100%`, `115%`, `130%`, `145%`). Text and exports seamlessly scale with vector fidelity.
+- **Task & WP Names Column Width**: Stretch the task name column via toolbar slider, presets (`260px`, `350px`, `450px`, `550px`), double-click **Auto-Fit**, or direct click-and-drag divider handle.
+- **Landscape 16:9 Stretch**: One-click optimal 16:9 widescreen timeline stretch for presentation slides and proposal attachments.
+- **Task Drag-and-Drop Reordering**: Order tasks up and down directly from the sidebar list or within the chart.
+- **Full Undo / Redo**: `Ctrl+Z` / `Cmd+Z` and `Ctrl+Y` / `Cmd+Shift+Z` support across all edits and adjustments.
+- **Interactive Timeline Bars**: Drag task bars along the timeline to reschedule; drag the right edge to extend or shorten duration.
 - **Collapsible Work Packages**: Click any Work Package header row to collapse or expand its items.
 - **Rich Hover Tooltips**: Inspect task titles, duration, responsible leads, progress, and descriptions at a glance.
-- **Timeline Zoom**: Zoom in/out to adjust column width for short or multi-year projects.
 
 ### 💾 Data Portability
 - **Auto-Save**: Changes persist automatically to browser `localStorage`.

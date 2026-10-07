@@ -545,6 +545,44 @@ class App {
       this.autoFitTaskColumnWidth();
     });
 
+    // Font Size Toolbar Controls
+    document.getElementById('btn-font-smaller')?.addEventListener('click', () => {
+      this.stepFontScale(-0.05);
+    });
+
+    document.getElementById('btn-font-larger')?.addEventListener('click', () => {
+      this.stepFontScale(0.05);
+    });
+
+    document.getElementById('btn-font-reset')?.addEventListener('click', () => {
+      this.setFontScale(1.0);
+    });
+
+    // Font Size Settings Slider
+    const fontScaleSlider = document.getElementById('input-font-scale');
+    fontScaleSlider?.addEventListener('input', (e) => {
+      const val = parseInt(e.target.value, 10);
+      const scale = val / 100;
+      this.state.meta.fontScale = scale;
+      this.syncFontScaleDisplays(scale);
+      this.gantt.render(this.state);
+      saveState(this.state);
+    });
+    fontScaleSlider?.addEventListener('change', () => {
+      this.pushHistory();
+      saveState(this.state);
+    });
+
+    // Font Size Presets
+    document.querySelectorAll('.btn-font-preset').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const scale = parseFloat(btn.getAttribute('data-scale'));
+        if (scale) {
+          this.setFontScale(scale);
+        }
+      });
+    });
+
     // Ctrl/Cmd/Alt + Wheel zoom for horizontal stretch
     this.scrollViewport?.addEventListener('wheel', (e) => {
       if (e.ctrlKey || e.metaKey || e.altKey) {
@@ -743,6 +781,8 @@ class App {
     const colWidth = meta.leftColWidth || (meta.compactView ? 260 : 350);
     this.syncColWidthDisplays(colWidth);
 
+    this.syncFontScaleDisplays(meta.fontScale || 1.0);
+
     const rowHeightSelect = document.getElementById('select-row-height');
     if (rowHeightSelect) rowHeightSelect.value = String(meta.rowHeight || 38);
   }
@@ -760,6 +800,36 @@ class App {
     if (label) label.textContent = `${width}px`;
   }
 
+  syncFontScaleDisplays(val) {
+    const scale = Number(val) || 1.0;
+    const pct = Math.round(scale * 100);
+    const toolbarVal = document.getElementById('toolbar-font-val');
+    const settingsSlider = document.getElementById('input-font-scale');
+    const settingsVal = document.getElementById('label-font-scale-val');
+
+    if (toolbarVal) toolbarVal.textContent = `${pct}%`;
+    if (settingsSlider && parseInt(settingsSlider.value, 10) !== pct) {
+      settingsSlider.value = pct;
+    }
+    if (settingsVal) settingsVal.textContent = `${pct}%`;
+  }
+
+  setFontScale(scale) {
+    const clamped = Math.max(0.80, Math.min(1.50, Math.round(scale * 100) / 100));
+    this.pushHistory();
+    this.state.meta.fontScale = clamped;
+    this.syncFontScaleDisplays(clamped);
+    this.saveAndRender();
+  }
+
+  stepFontScale(delta) {
+    const current = Number(this.state.meta.fontScale) || 1.0;
+    const next = Math.max(0.80, Math.min(1.50, Math.round((current + delta) * 100) / 100));
+    if (next !== current) {
+      this.setFontScale(next);
+    }
+  }
+
   autoFitTaskColumnWidth() {
     let maxLen = 0;
     this.state.items.forEach(it => {
@@ -771,8 +841,9 @@ class App {
       if (wpLen > maxLen) maxLen = wpLen;
     });
 
-    const neededWidth = Math.round(maxLen * 6.8) + 140;
-    const clampedWidth = Math.max(280, Math.min(650, neededWidth));
+    const fontScale = Number(this.state.meta.fontScale) || 1.0;
+    const neededWidth = Math.round(maxLen * (6.8 * fontScale)) + Math.round(140 * fontScale);
+    const clampedWidth = Math.max(280, Math.min(800, neededWidth));
 
     this.pushHistory();
     this.state.meta.leftColWidth = clampedWidth;
@@ -795,11 +866,15 @@ class App {
 
   autoStretchLandscape() {
     const meta = this.state.meta;
+    const fontScale = Number(meta.fontScale) || 1.0;
     const leftColWidth = meta.leftColWidth || (meta.compactView ? 260 : 350);
     const totalMonths = Math.max(1, meta.totalMonths || 36);
     const rowHeight = meta.rowHeight || 38;
+    const titleBannerHeight = Math.round(68 * Math.max(1, fontScale * 0.92));
+    const headerHeight = 70;
     const visibleRowsCount = this.state.workPackages.length + this.state.items.length;
-    const totalHeight = 68 + 70 + (visibleRowsCount * rowHeight) + 44 + 20;
+    const legendHeight = Math.round(44 * Math.max(1, fontScale * 0.92));
+    const totalHeight = titleBannerHeight + headerHeight + (visibleRowsCount * rowHeight) + legendHeight + 20;
 
     // Target widescreen 16:9 landscape aspect ratio (ratio = 16 / 9 ≈ 1.778)
     const targetTotalWidth = Math.round(totalHeight * (16 / 9));

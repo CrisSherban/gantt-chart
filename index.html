@@ -314,13 +314,31 @@
             </div>
 
             <!-- Row Density / Vertical Spacing -->
-            <div class="form-group" style="margin-bottom: 6px;">
+            <div class="form-group" style="margin-bottom: 12px;">
               <label class="form-label" for="select-row-height">Vertical Row Height</label>
               <select id="select-row-height" class="form-control" style="font-size: 12px;">
                 <option value="30">Compact (30px) — Maximizes Landscape</option>
                 <option value="38" selected>Standard (38px)</option>
                 <option value="46">Spacious (46px)</option>
               </select>
+            </div>
+
+            <!-- Font Size Scaling Section -->
+            <div class="form-group" style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--border); margin-bottom: 6px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                <label class="form-label" style="margin-bottom: 0;" for="input-font-scale">Chart Font Size</label>
+                <span id="label-font-scale-val" style="font-size: 12px; font-weight: 700; color: var(--primary);">100%</span>
+              </div>
+              <input type="range" id="input-font-scale" min="80" max="150" value="100" step="5" style="width: 100%; cursor: pointer; accent-color: var(--primary);" title="Adjust overall font size across the entire Gantt chart">
+              
+              <!-- Quick Font Size Presets -->
+              <div style="display: flex; gap: 4px; margin-top: 8px;">
+                <button type="button" class="btn btn-xs btn-font-preset" data-scale="0.85" style="flex: 1;" title="Compact (85%)">85%</button>
+                <button type="button" class="btn btn-xs btn-font-preset" data-scale="1.0" style="flex: 1;" title="Default (100%)">100%</button>
+                <button type="button" class="btn btn-xs btn-font-preset" data-scale="1.15" style="flex: 1;" title="Large (115%)">115%</button>
+                <button type="button" class="btn btn-xs btn-font-preset" data-scale="1.30" style="flex: 1;" title="XL (130%)">130%</button>
+                <button type="button" class="btn btn-xs btn-font-preset" data-scale="1.45" style="flex: 1;" title="Huge (145%)">145%</button>
+              </div>
             </div>
           </div>
         </div>
@@ -356,6 +374,19 @@
             <span style="font-size: 11px; font-weight: 600; color: var(--text-muted); padding: 0 4px;">Scroll</span>
             <button id="btn-scroll-right" class="btn btn-sm btn-icon" style="border:none; height:24px; width:24px;" title="Scroll Timeline Right">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </button>
+          </div>
+
+          <!-- Font Size Scaling Controls -->
+          <div class="font-scale-group" style="display: flex; align-items: center; gap: 2px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 2px;" title="Adjust overall chart font size">
+            <button id="btn-font-smaller" class="btn btn-sm btn-icon" style="border:none; height:24px; width:24px; font-weight: 700; font-size: 11.5px;" title="Decrease Font Size (A−)">
+              A<span style="font-size: 9.5px; vertical-align: super; font-weight: 800;">−</span>
+            </button>
+            <button id="btn-font-reset" class="btn btn-sm" style="border:none; height:24px; padding: 0 5px; font-size: 11px; font-weight: 700; color: var(--primary); background: transparent;" title="Reset Font Size to 100%">
+              <span id="toolbar-font-val">100%</span>
+            </button>
+            <button id="btn-font-larger" class="btn btn-sm btn-icon" style="border:none; height:24px; width:24px; font-weight: 700; font-size: 11.5px;" title="Increase Font Size (A+)">
+              A<span style="font-size: 9.5px; vertical-align: super; font-weight: 800;">+</span>
             </button>
           </div>
 
